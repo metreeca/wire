@@ -1,0 +1,67 @@
+{
+  "name": "@metreeca/wire-sparql",
+  "version": "0.9.0",
+  "description": "SPARQL 1.1 query language framework for @metreeca/wire storage connectors.",
+  "keywords": [
+    "typescript",
+    "rdf",
+    "iri",
+    "sparql"
+  ],
+  "homepage": "https://metreeca.github.io/wire/",
+  "bugs": {
+    "url": "https://github.com/metreeca/wire/issues",
+    "email": "info@metreeca.com"
+  },
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Metreeca",
+    "email": "info@metreeca.com",
+    "url": "https://www.metreeca.com/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/metreeca/wire.git",
+    "directory": "packages/wire-sparql"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@metreeca/source": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./codecs/ntriples": {
+      "@metreeca/source": "./src/codecs/ntriples/index.ts",
+      "default": "./dist/codecs/ntriples/index.js"
+    },
+    "./dsl": {
+      "@metreeca/source": "./src/dsl.ts",
+      "default": "./dist/dsl.js"
+    },
+    "./rdf": {
+      "@metreeca/source": "./src/rdf.ts",
+      "default": "./dist/rdf.js"
+    }
+  },
+  "files": [
+    "README.md",
+    "LICENSE",
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "clean": "rm -rf dist docs node_modules",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "check": "npx vitest --typecheck run"
+  },
+  "dependencies": {
+    "@metreeca/core": "^0.9.19"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.13"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "name": "@metreeca/wire-sparql-oxigraph",
+  "version": "0.9.0",
+  "description": "SPARQL connector for @metreeca/wire backed by an Oxigraph in-memory WASM store.",
+  "keywords": [
+    "typescript",
+    "json-ld",
+    "model-driven",
+    "sparql",
+    "oxigraph"
+  ],
+  "homepage": "https://metreeca.github.io/wire/",
+  "bugs": {
+    "url": "https://github.com/metreeca/wire/issues",
+    "email": "info@metreeca.com"
+  },
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Metreeca",
+    "email": "info@metreeca.com",
+    "url": "https://www.metreeca.com/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/metreeca/wire.git",
+    "directory": "packages/wire-sparql-oxigraph"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@metreeca/source": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "README.md",
+    "LICENSE",
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "clean": "rm -rf dist docs node_modules",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "check": "npx vitest --typecheck run"
+  },
+  "dependencies": {
+    "@metreeca/core": "^0.9.19",
+    "@metreeca/wire-sparql": "^0.9.0"
+  },
+  "peerDependencies": {
+    "oxigraph": ">=0.5.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.13"
+  }
+}

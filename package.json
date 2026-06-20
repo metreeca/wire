@@ -1,0 +1,28 @@
+{
+  "private": true,
+  "version": "0.9.0",
+  "description": "Pluggable storage connectors for relational and graph databases.",
+  "keywords": [
+    "typescript",
+    "database",
+    "connector",
+    "sql",
+    "gql",
+    "cypher",
+    "sparql"
+  ],
+  "workspaces": [
+    "packages/*/*"
+  ],
+  "scripts": {
+    "clean": "npm run clean --workspaces && rm -rf dist docs node_modules",
+    "setup": "npm install",
+    "build": "npm run build --workspaces && rm -rf docs && npx typedoc",
+    "check": "npm run check --workspaces",
+    "proof": "npm run build && npx five-server docs --open --watch=false"
+  },
+  "devDependencies": {
+    "five-server": "^0.4.5",
+    "typedoc": "^0.28.18"
+  }
+}
