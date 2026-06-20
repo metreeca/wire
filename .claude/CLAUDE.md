@@ -25,7 +25,7 @@ there is no intermediate core package. The connectors are self-contained and con
 # NPM Scripts
 
 - **`npm run clean`** - Remove build artifacts and dependencies (dist, docs, node_modules)
-- **`npm run setup`** - Install dependencies and apply security fixes
+- **`npm run setup`** - Install dependencies
 - **`npm run build`** - Build TypeScript and generate TypeDoc documentation
 - **`npm run check`** - Run Vitest test suite
 - **`npm run proof`** - Build documentation and start static server
