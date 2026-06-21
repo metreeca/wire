@@ -150,8 +150,7 @@ export const media = immutable({
 /**
  * RDF vocabulary namespace.
  *
- * Supplies the well-known RDF vocabulary IRIs the connector emits and matches when reading and writing RDF, such as the
- * `type` predicate and the terms encoding RDF statements and collections.
+ * Well-known RDF vocabulary IRIs, such as the `type` predicate and the terms encoding RDF statements and collections.
  *
  * @see {@link https://www.w3.org/TR/rdf11-concepts/ RDF 1.1 Concepts and Abstract Syntax}
  */
@@ -182,9 +181,9 @@ export const rdf = createNamespace("http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 /**
  * XSD datatype namespace.
  *
- * Supplies the most common primitive XML Schema datatype IRIs the connector attaches to RDF literals when writing typed
- * values, and matches against when decoding those literals back into scalar values. The set is a non-exhaustive
- * selection of the datatypes in routine use, not the full XSD catalogue.
+ * Well-known XML Schema datatype IRIs for RDF literals. The set covers the complete numeric and date/time families
+ * together with `boolean`, `string`, `anyURI`, and the binary datatypes; the string-derived and qualified-name
+ * datatypes are omitted, so this is not the full XSD catalogue.
  *
  * @see {@link https://www.w3.org/TR/xmlschema11-2/ W3C XML Schema Definition Language (XSD) 1.1 Part 2: Datatypes}
  */
@@ -201,6 +200,16 @@ export const xsd = createNamespace("http://www.w3.org/2001/XMLSchema#", [
 	"integer",
 	"decimal",
 
+	"unsignedLong",
+	"unsignedInt",
+	"unsignedShort",
+	"unsignedByte",
+
+	"nonPositiveInteger",
+	"negativeInteger",
+	"nonNegativeInteger",
+	"positiveInteger",
+
 	"string",
 	"anyURI",
 
@@ -212,7 +221,10 @@ export const xsd = createNamespace("http://www.w3.org/2001/XMLSchema#", [
 	"date",
 	"time",
 	"dateTime",
+	"dateTimeStamp",
 	"duration",
+	"yearMonthDuration",
+	"dayTimeDuration",
 
 	"hexBinary",
 	"base64Binary"

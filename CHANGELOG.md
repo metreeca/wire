@@ -7,6 +7,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/metreeca/wire/compare/v0.9.0...HEAD)
 
+### Added
+
+- `@metreeca/wire-sparql` — `xsd` namespace extended to cover the complete numeric and date/time datatype families
+
 ## [0.9.0](https://github.com/metreeca/wire/releases/tag/v0.9.0)
 
 ### Added
