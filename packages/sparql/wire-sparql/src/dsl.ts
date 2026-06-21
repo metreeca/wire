@@ -1107,6 +1107,20 @@ export function pattern([subject, predicate, object]: Pattern): SPARQL {
 
 
 /**
+ * Generates the SPARQL representation of a {@link Variable} or {@link Term}.
+ *
+ * Dispatches to {@link variable} for a query variable and to {@link term} for any RDF term, serialising a node that
+ * occupies a subject or object position whether or not it is left unbound.
+ *
+ * @param anchor The query variable or RDF term to render
+ *
+ * @returns The generated SPARQL node
+ */
+export function anchor(anchor: Variable | Term): SPARQL {
+	return isVariable(anchor) ? variable(anchor) : term(anchor);
+}
+
+/**
  * Generates the SPARQL representation of a {@link Variable}.
  *
  * The variable token is already its own SPARQL form (for example `?0`), so it is emitted verbatim.

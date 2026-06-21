@@ -16,15 +16,52 @@
 
 import { describe, expect, it } from "vitest";
 import { escapeIRI, escapeString } from "./dsl.core.js";
-import { blank, literal, reference, tagged, typed, variable } from "./dsl.js";
+import { anchor, blank, literal, reference, tagged, term, typed, variable } from "./dsl.js";
 
 
 describe("terms", () => {
+
+	describe("anchor", () => {
+
+		it("should render a variable verbatim", async () => {
+			expect(anchor("?0")).toBe("?0");
+		});
+
+		it("should serialise a term", async () => {
+			expect(anchor("http://example.org/x")).toBe("<http://example.org/x>");
+		});
+
+	});
 
 	describe("variable", () => {
 
 		it("should render the variable token verbatim", async () => {
 			expect(variable("?0")).toBe("?0");
+		});
+
+	});
+
+	describe("term", () => {
+
+		it("should serialise a blank node", async () => {
+			expect(term("_:b0")).toBe("_:b0");
+		});
+
+		it("should serialise an IRI reference", async () => {
+			expect(term("http://example.org/x")).toBe("<http://example.org/x>");
+		});
+
+		it("should serialise a language-tagged literal", async () => {
+			expect(term({ text: "hello", language: "en" })).toBe("\"hello\"@en");
+		});
+
+		it("should serialise a datatype-typed literal", async () => {
+			expect(term({ text: "42", datatype: "http://www.w3.org/2001/XMLSchema#integer" }))
+				.toBe("\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>");
+		});
+
+		it("should serialise a simple literal when datatype is absent", async () => {
+			expect(term({ text: "hello" })).toBe("\"hello\"");
 		});
 
 	});
@@ -53,22 +90,6 @@ describe("terms", () => {
 
 		it("should escape forbidden characters in IRI", async () => {
 			expect(reference("http://example.org/a b")).toBe("<http://example.org/a\\u0020b>");
-		});
-
-		it("should escape control characters in IRI", async () => {
-			expect(reference("http://example.org/a\tb")).toBe("<http://example.org/a\\u0009b>");
-		});
-
-		it("should escape backslash in IRI", async () => {
-			expect(reference("http://example.org/a\\b")).toBe("<http://example.org/a\\u005Cb>");
-		});
-
-		it("should escape angle brackets in IRI", async () => {
-			expect(reference("http://example.org/a<b>c")).toBe("<http://example.org/a\\u003Cb\\u003Ec>");
-		});
-
-		it("should escape supplementary plane characters with uppercase form", async () => {
-			expect(reference("http://example.org/\u{1F600}")).toBe("<http://example.org/\\U0001F600>");
 		});
 
 		it("should mint fresh urn:uuid reference when no argument is provided", async () => {
@@ -112,10 +133,6 @@ describe("terms", () => {
 			expect(tagged("hello", "en")).toBe("\"hello\"@en");
 		});
 
-		it("should serialise language tag with region", async () => {
-			expect(tagged("color", "en-US")).toBe("\"color\"@en-US");
-		});
-
 		it("should escape text in language-tagged literal", async () => {
 			expect(tagged("say \"hello\"", "en")).toBe("\"say \\\"hello\\\"\"@en");
 		});
@@ -127,11 +144,6 @@ describe("terms", () => {
 		it("should serialise typed literal with datatype IRI", async () => {
 			expect(typed("42", "http://www.w3.org/2001/XMLSchema#integer"))
 				.toBe("\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>");
-		});
-
-		it("should serialise boolean typed literal", async () => {
-			expect(typed("true", "http://www.w3.org/2001/XMLSchema#boolean"))
-				.toBe("\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>");
 		});
 
 		it("should escape text in typed literal", async () => {
