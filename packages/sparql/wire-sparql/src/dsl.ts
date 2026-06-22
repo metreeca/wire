@@ -31,6 +31,7 @@
 
 import { type Identifier } from "@metreeca/core";
 import { isTag, type Tag, type TagRange } from "@metreeca/core/language";
+import { xsd } from "@metreeca/core/resource";
 import { escapeIRI, escapeString } from "./dsl.core.js";
 import {
 	type Blank,
@@ -39,15 +40,23 @@ import {
 	isTagged,
 	isVariable,
 	type Pattern,
-	rdf,
 	type Reference,
 	type SPARQL,
 	type Term,
 	type Triple,
-	type Variable,
-	xsd
+	type Variable
 } from "./index.js";
 
+
+/**
+ * The full `rdf:type` predicate IRI, expanded from the SPARQL `"a"` shorthand.
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#abbrevRdfType SPARQL `rdf:type` shorthand}
+ */
+const type: Reference = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Generates a SPARQL `UNION` pattern.
@@ -1060,7 +1069,7 @@ export function triples(triples: readonly Triple[]): SPARQL {
 export function triple([subject, predicate, object]: Triple): SPARQL {
 	return edge(
 		term(subject),
-		reference(predicate === "a" ? rdf.type : predicate),
+		reference(predicate === "a" ? type : predicate),
 		term(object)
 	);
 }

@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
+import { xsd } from "@metreeca/core/resource";
 import { describe, expect, test } from "vitest";
-import { tagged, typed, xsd } from "./index.js";
+import { tagged, typed } from "./index.js";
 import { data, describe as describeResource, link, property, resource, term, text } from "./rdf.js";
 
 

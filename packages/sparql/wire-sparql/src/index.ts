@@ -21,11 +21,9 @@
  * the {@link Repository} interface and exchange data as the RDF and SPARQL types defined here, regardless of which
  * connector backs the store.
  *
- * **Vocabularies and formats**
+ * **Media types**
  *
  * - {@link media} — IANA media types for RDF serialisations and SPARQL protocol exchanges
- * - {@link rdf} — RDF vocabulary namespace
- * - {@link xsd} — XSD datatype namespace
  *
  * **Repository**
  *
@@ -101,7 +99,7 @@ import { isArray, isNumber, isObject as isRecord, isString, type Scalar } from "
 import { immutable } from "@metreeca/core/deep";
 import { isTag, type Tag } from "@metreeca/core/language";
 import { error } from "@metreeca/core/report";
-import { createNamespace, type IRI, isIRI } from "@metreeca/core/resource";
+import { type IRI, isIRI } from "@metreeca/core/resource";
 import { createScope } from "@metreeca/core/scope";
 
 
@@ -145,91 +143,6 @@ export const media = immutable({
 	results: "application/sparql-results+json"
 
 });
-
-
-/**
- * RDF vocabulary namespace.
- *
- * Well-known RDF vocabulary IRIs, such as the `type` predicate and the terms encoding RDF statements and collections.
- *
- * @see {@link https://www.w3.org/TR/rdf11-concepts/ RDF 1.1 Concepts and Abstract Syntax}
- */
-export const rdf = createNamespace("http://www.w3.org/1999/02/22-rdf-syntax-ns#", [
-
-	"type",
-
-	"Property",
-	"value",
-
-	"Statement",
-	"subject",
-	"predicate",
-	"object",
-
-	"List",
-	"first",
-	"rest",
-	"nil",
-
-	"langString",
-	"HTML",
-	"XMLLiteral",
-	"JSON"
-
-]);
-
-/**
- * XSD datatype namespace.
- *
- * Well-known XML Schema datatype IRIs for RDF literals. The set covers the complete numeric and date/time families
- * together with `boolean`, `string`, `anyURI`, and the binary datatypes; the string-derived and qualified-name
- * datatypes are omitted, so this is not the full XSD catalogue.
- *
- * @see {@link https://www.w3.org/TR/xmlschema11-2/ W3C XML Schema Definition Language (XSD) 1.1 Part 2: Datatypes}
- */
-export const xsd = createNamespace("http://www.w3.org/2001/XMLSchema#", [
-
-	"boolean",
-
-	"byte",
-	"short",
-	"int",
-	"long",
-	"float",
-	"double",
-	"integer",
-	"decimal",
-
-	"unsignedLong",
-	"unsignedInt",
-	"unsignedShort",
-	"unsignedByte",
-
-	"nonPositiveInteger",
-	"negativeInteger",
-	"nonNegativeInteger",
-	"positiveInteger",
-
-	"string",
-	"anyURI",
-
-	"gYear",
-	"gYearMonth",
-	"gMonth",
-	"gMonthDay",
-	"gDay",
-	"date",
-	"time",
-	"dateTime",
-	"dateTimeStamp",
-	"duration",
-	"yearMonthDuration",
-	"dayTimeDuration",
-
-	"hexBinary",
-	"base64Binary"
-
-]);
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
