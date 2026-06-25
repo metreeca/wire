@@ -7,6 +7,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/metreeca/wire/compare/v0.9.0...HEAD)
 
+### Added
+
+- `@metreeca/wire-sparql` — `RepositoryClient` interface grouping the `ask`/`select`/`construct`/`update` query and
+  update operations
+
+### Changed
+
+- `@metreeca/wire-sparql` — `Repository` now extends `RepositoryClient`, and `Repository.execute` hands the task a
+  `RepositoryClient` instead of a full `Repository`
+
 ### Removed
 
 - `@metreeca/wire-sparql` — `rdf` and `xsd` namespace exports; the `xsd` datatype namespace is now sourced from

@@ -81,8 +81,8 @@ await repository.close();
 
 ## Transactions
 
-Bracket related operations with `execute`: the task runs on a per-call `Repository` and commits together, or rolls back
-if it throws:
+Bracket related operations with `execute`: the task runs on a per-call `RepositoryClient` and commits together, or rolls
+back if it throws:
 
 ```typescript
 await repository.execute(async tx => {

@@ -27,8 +27,8 @@
  *
  * **Repository**
  *
- * - {@link Repository} — queries and updates an RDF store: `ask`/`select`/`construct`, `update`, transactional
- *   `execute`, and `close`
+ * - {@link Repository} — a {@link RepositoryClient} with transactional `execute` and lifecycle `close`
+ * - {@link RepositoryClient} — query and update surface of an RDF store: `ask`/`select`/`construct` and `update`
  *
  * **SPARQL data model**
  *
@@ -150,8 +150,8 @@ export const media = immutable({
 /**
  * SPARQL repository.
  *
- * The interface connector packages implement to expose a concrete SPARQL backend: executing SPARQL queries and updates
- * against the backing RDF store, with transactional {@link Repository.execute | execute} and lifecycle
+ * The interface connector packages implement to expose a concrete SPARQL backend. Extends the {@link RepositoryClient}
+ * query and update surface with transactional {@link Repository.execute | execute} and lifecycle
  * {@link Repository.close | close}.
  *
  * > [!IMPORTANT]
@@ -164,7 +164,75 @@ export const media = immutable({
  * @see {@link https://www.w3.org/TR/sparql11-query/ SPARQL 1.1 Query Language}
  * @see {@link https://www.w3.org/TR/sparql11-update/ SPARQL 1.1 Update}
  */
-export interface Repository {
+export interface Repository extends RepositoryClient {
+
+	/**
+	 * Execute a task within a repository transaction.
+	 *
+	 * The task receives a per-call {@link RepositoryClient} bound to a transaction; updates issued through it are
+	 * applied within the transaction in order. If the task completes successfully, the transaction commits. If the task
+	 * throws or rejects, the transaction rolls back and the error is propagated to the caller as a promise
+	 * rejection. Concurrent top-level `execute` calls run in independent transactions and never share state.
+	 *
+	 * > [!IMPORTANT]
+	 * > Every implementation must provide `execute`, but its guarantees are backend-dependent. A backend with native
+	 * > transactions brackets the task for atomic commit and rollback. A backend without one supplies a degenerate
+	 * > implementation: the task runs directly against this same {@link Repository}, with no atomicity and no
+	 * > rollback. Either way, each implementation declares the isolation level it provides in its own factory
+	 * > documentation.
+	 *
+	 * > [!WARNING]
+	 * > `execute` is not re-entrant: while a task is running, it MUST NOT start another transaction by calling
+	 * > `execute` again on the same repository. Transactions do not nest, so all operations that must commit together
+	 * > have to run within a single `execute` call.
+	 *
+	 * > [!WARNING]
+	 * > The task MUST NOT retain or use the {@link RepositoryClient} it receives after `execute` settles:
+	 * > implementations may back it with transaction-scoped state (buffered mutations, a bound backend scope) that is
+	 * > flushed or discarded on completion, so any later call has undefined behaviour.
+	 *
+	 * @typeParam V - Return type of the task
+	 *
+	 * @param task - Async or sync function performing SPARQL operations on the per-call {@link RepositoryClient}
+	 *
+	 * @returns A promise resolving to the value returned by `task`; rejects with a
+	 * {@link @metreeca/core!Problem | Problem} if a transaction, network, storage, or other processing error occurs
+	 */
+	execute<V>(task: (repository: RepositoryClient) => V | Promise<V>): Promise<V>;
+
+	/**
+	 * Release resources held by this repository.
+	 *
+	 * Frees underlying resources such as database connections or file handles. Calling `close` on an
+	 * already-closed repository has no effect.
+	 *
+	 * > [!IMPORTANT]
+	 * > Every implementation must provide `close`, but it is degenerate where there is nothing to release: a backend
+	 * > that holds no resources implements it as a resolved no-op.
+	 *
+	 * > [!WARNING]
+	 * > Callers MUST NOT use the repository after `close` settles: `ask`, `select`, `construct`, `update`, and
+	 * > `execute` all have undefined behaviour once the underlying resources are released.
+	 *
+	 * @returns A promise resolving when all resources have been released; rejects with a
+	 * {@link @metreeca/core!Problem | Problem} if a clean-up error occurs
+	 */
+	close(): Promise<void>;
+
+}
+
+/**
+ * SPARQL repository query and update operations.
+ *
+ * Groups the four core operations: `ask`, `select`, and `construct` read from the backing RDF store, and `update`
+ * writes to it. {@link Repository} extends this surface for standalone use; the same operations are also handed to a
+ * task as the per-call client inside {@link Repository.execute | execute}, where they run within the enclosing
+ * transaction.
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/ SPARQL 1.1 Query Language}
+ * @see {@link https://www.w3.org/TR/sparql11-update/ SPARQL 1.1 Update}
+ */
+export interface RepositoryClient {
 
 	/**
 	 * Execute an ASK query.
@@ -200,50 +268,6 @@ export interface Repository {
 	 */
 	update(update: SPARQL): Promise<void>;
 
-
-	/**
-	 * Execute a task within a repository transaction.
-	 *
-	 * The task receives a per-call {@link Repository} bound to a transaction; updates issued through it are applied
-	 * within the transaction in order. If the task completes successfully, the transaction commits. If the task
-	 * throws or rejects, the transaction rolls back and the error is propagated to the caller as a promise
-	 * rejection. Concurrent top-level `execute` calls run in independent transactions and never share state.
-	 *
-	 * > [!WARNING]
-	 * > `execute` is not re-entrant. Transaction boundaries are flat and compositions must share a single outer
-	 * > call site.
-	 *
-	 * > [!IMPORTANT]
-	 * > Every implementation must provide `execute`, but its guarantees are backend-dependent. A backend with native
-	 * > transactions brackets the task for atomic commit and rollback. A backend without one supplies a degenerate
-	 * > implementation: the task runs directly against this same {@link Repository}, with no atomicity and no
-	 * > rollback. Either way, each implementation declares the isolation level it provides in its own factory
-	 * > documentation.
-	 *
-	 * @typeParam V - Return type of the task
-	 *
-	 * @param task - Async or sync function performing SPARQL operations on the per-call {@link Repository}
-	 *
-	 * @returns A promise resolving to the value returned by `task`; rejects with a
-	 * {@link @metreeca/core!Problem | Problem} if a transaction, network, storage, or other processing error occurs
-	 */
-	execute<V>(task: (repository: Repository) => V | Promise<V>): Promise<V>;
-
-	/**
-	 * Release resources held by this repository.
-	 *
-	 * Frees underlying resources such as database connections or file handles. Calling `close` on an
-	 * already-closed repository has no effect.
-	 *
-	 * > [!IMPORTANT]
-	 * > Every implementation must provide `close`, but it is degenerate where there is nothing to release: a backend
-	 * > that holds no resources implements it as a resolved no-op.
-	 *
-	 * @returns A promise resolving when all resources have been released; rejects with a
-	 * {@link @metreeca/core!Problem | Problem} if a clean-up error occurs
-	 */
-	close(): Promise<void>;
-
 }
 
 
@@ -264,7 +288,8 @@ export type SPARQL = string
  * A SPARQL query-solution mapping.
  *
  * Maps each projected {@link Variable} token to the RDF {@link Term} bound by the solution. Returned by
- * {@link Repository.select | `Repository.select`} in solution-sequence order. Construct one with {@link tuple}.
+ * {@link RepositoryClient.select | `RepositoryClient.select`} in solution-sequence order. Construct one with
+ * {@link tuple}.
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#sparqlSolutions SPARQL 1.1 Query Solutions}
  */
@@ -323,7 +348,8 @@ export type Graph =
  *
  * The subject is an IRI {@link Reference} or a {@link Blank | blank node}; the predicate is always an IRI; the object
  * admits any {@link Term}: an IRI, a blank node, or a language-{@link Tagged | tagged} or datatype-{@link Typed |
- * typed} literal. Returned by {@link Repository.construct | `Repository.construct`}, one entry per produced statement.
+ * typed} literal. Returned by {@link RepositoryClient.construct | `RepositoryClient.construct`}, one entry per produced
+ * statement.
  * Construct one with {@link triple}.
  *
  * > [!NOTE]
