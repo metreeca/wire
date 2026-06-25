@@ -14,9 +14,11 @@
  * limitations under the License.
  */
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import type { Repository, Triple, Tuple } from "./index.js";
 import {
 	blank,
+	createBufferingRepository,
 	graph,
 	isBlank,
 	isGraph,
@@ -442,45 +444,164 @@ describe("factories", () => {
 
 });
 
-describe("skolemize", () => {
+describe("utilities", () => {
 
-	test("leaves a ground triple unchanged", async () => {
-		expect(skolemize([["http://example.com/s", "a", typed("v")]]))
-			.toEqual([["http://example.com/s", "a", typed("v")]]);
+	describe("skolemize", () => {
+
+		test("leaves a ground triple unchanged", async () => {
+			expect(skolemize([["http://example.com/s", "a", typed("v")]]))
+				.toEqual([["http://example.com/s", "a", typed("v")]]);
+		});
+
+		test("replaces a blank-node subject with a minted IRI reference", async () => {
+			const [[subject, predicate, object]] =
+				skolemize([["_:0", "http://example.com/p", "http://example.com/o"]]);
+			expect(isReference(subject)).toBe(true);
+			expect(isBlank(subject)).toBe(false);
+			expect(predicate).toBe("http://example.com/p");
+			expect(object).toBe("http://example.com/o");
+		});
+
+		test("replaces a blank-node object with a minted IRI reference", async () => {
+			const [[, , object]] = skolemize([["http://example.com/s", "http://example.com/p", "_:0"]]);
+			expect(isReference(object)).toBe(true);
+			expect(isBlank(object)).toBe(false);
+		});
+
+		test("correlates repeated blank labels within the sequence to one reference", async () => {
+			const [[s0, , o0], [s1, , o1]] = skolemize([
+				["_:0", "http://example.com/p", "_:1"],
+				["_:1", "http://example.com/p", "_:0"]
+			]);
+			expect(s0).toBe(o1); // both decode the "_:0" label
+			expect(o0).toBe(s1); // both decode the "_:1" label
+			expect(s0).not.toBe(o0); // distinct labels mint distinct references
+		});
+
+		test("mints urn:uuid references", async () => {
+			const [[subject]] = skolemize([["_:0", "http://example.com/p", "http://example.com/o"]]);
+			expect(subject).toMatch(/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+		});
+
+		test("returns the empty sequence for an empty input", async () => {
+			expect(skolemize([])).toEqual([]);
+		});
+
 	});
 
-	test("replaces a blank-node subject with a minted IRI reference", async () => {
-		const [[subject, predicate, object]] =
-			skolemize([["_:0", "http://example.com/p", "http://example.com/o"]]);
-		expect(isReference(subject)).toBe(true);
-		expect(isBlank(subject)).toBe(false);
-		expect(predicate).toBe("http://example.com/p");
-		expect(object).toBe("http://example.com/o");
-	});
+});
 
-	test("replaces a blank-node object with a minted IRI reference", async () => {
-		const [[, , object]] = skolemize([["http://example.com/s", "http://example.com/p", "_:0"]]);
-		expect(isReference(object)).toBe(true);
-		expect(isBlank(object)).toBe(false);
-	});
+describe("wrappers", () => {
 
-	test("correlates repeated blank labels within the sequence to one reference", async () => {
-		const [[s0, , o0], [s1, , o1]] = skolemize([
-			["_:0", "http://example.com/p", "_:1"],
-			["_:1", "http://example.com/p", "_:0"]
-		]);
-		expect(s0).toBe(o1); // both decode the "_:0" label
-		expect(o0).toBe(s1); // both decode the "_:1" label
-		expect(s0).not.toBe(o0); // distinct labels mint distinct references
-	});
+	describe("createBufferingRepository", () => {
 
-	test("mints urn:uuid references", async () => {
-		const [[subject]] = skolemize([["_:0", "http://example.com/p", "http://example.com/o"]]);
-		expect(subject).toMatch(/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-	});
+		const rows = [tuple({ "?x": reference("http://example.com/") })];
+		const statements = [triple("http://example.com/s", "a", reference("http://example.com/o"))];
 
-	test("returns the empty sequence for an empty input", async () => {
-		expect(skolemize([])).toEqual([]);
+		// a recording repository whose execute hands the task a separate, observable transaction scope
+
+		function fakeRepository() {
+
+			const scope = {
+				ask: vi.fn(async (): Promise<boolean> => true),
+				select: vi.fn(async (): Promise<readonly Tuple[]> => []),
+				construct: vi.fn(async (): Promise<readonly Triple[]> => []),
+				update: vi.fn(async (): Promise<void> => {})
+			};
+
+			const repository: Repository = {
+				ask: vi.fn(async (): Promise<boolean> => true),
+				select: vi.fn(async (): Promise<readonly Tuple[]> => rows),
+				construct: vi.fn(async (): Promise<readonly Triple[]> => statements),
+				update: vi.fn(async (): Promise<void> => {}),
+				execute: task => Promise.resolve(task(scope)),
+				close: vi.fn(async (): Promise<void> => {})
+			};
+
+			return { repository, scope };
+		}
+
+
+		describe("outside a transaction", () => {
+
+			test("delegates ask to the underlying repository", async () => {
+				const { repository } = fakeRepository();
+				await expect(createBufferingRepository(repository).ask("ASK")).resolves.toBe(true);
+				expect(repository.ask).toHaveBeenCalledWith("ASK");
+			});
+
+			test("delegates select to the underlying repository", async () => {
+				const { repository } = fakeRepository();
+				await expect(createBufferingRepository(repository).select("SELECT")).resolves.toEqual(rows);
+				expect(repository.select).toHaveBeenCalledWith("SELECT");
+			});
+
+			test("delegates construct to the underlying repository", async () => {
+				const { repository } = fakeRepository();
+				await expect(createBufferingRepository(repository).construct("CONSTRUCT")).resolves.toEqual(statements);
+				expect(repository.construct).toHaveBeenCalledWith("CONSTRUCT");
+			});
+
+			test("delegates update directly to the underlying repository", async () => {
+				const { repository } = fakeRepository();
+				await createBufferingRepository(repository).update("INSERT");
+				expect(repository.update).toHaveBeenCalledWith("INSERT");
+			});
+
+			test("delegates close to the underlying repository", async () => {
+				const { repository } = fakeRepository();
+				await createBufferingRepository(repository).close();
+				expect(repository.close).toHaveBeenCalledTimes(1);
+			});
+
+		});
+
+		describe("within a transaction", () => {
+
+			test("flushes buffered updates as a single combined update on commit", async () => {
+				const { repository, scope } = fakeRepository();
+				await createBufferingRepository(repository).execute(async client => {
+					await client.update("U1");
+					await client.update("U2");
+				});
+				expect(scope.update).toHaveBeenCalledTimes(1);
+				expect(scope.update).toHaveBeenCalledWith("U1;\nU2");
+			});
+
+			test("issues no update when the task performs none", async () => {
+				const { repository, scope } = fakeRepository();
+				await createBufferingRepository(repository).execute(async () => {});
+				expect(scope.update).not.toHaveBeenCalled();
+			});
+
+			test("forwards queries to the transaction scope unbuffered", async () => {
+				const { repository, scope } = fakeRepository();
+				await createBufferingRepository(repository).execute(async client => {
+					await client.ask("ASK");
+					await client.select("SELECT");
+					await client.construct("CONSTRUCT");
+				});
+				expect(scope.ask).toHaveBeenCalledWith("ASK");
+				expect(scope.select).toHaveBeenCalledWith("SELECT");
+				expect(scope.construct).toHaveBeenCalledWith("CONSTRUCT");
+			});
+
+			test("resolves to the value returned by the task", async () => {
+				const { repository } = fakeRepository();
+				await expect(createBufferingRepository(repository).execute(async () => 42)).resolves.toBe(42);
+			});
+
+			test("discards buffered updates when the task rejects", async () => {
+				const { repository, scope } = fakeRepository();
+				await expect(createBufferingRepository(repository).execute(async client => {
+					await client.update("U1");
+					throw new Error("boom");
+				})).rejects.toThrow();
+				expect(scope.update).not.toHaveBeenCalled();
+			});
+
+		});
+
 	});
 
 });

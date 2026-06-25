@@ -88,6 +88,11 @@
  *
  * - {@link skolemize} — replace a sequence's blank nodes with minted IRI references
  *
+ * **Wrappers**
+ *
+ * - {@link createBufferingRepository} — wrap a {@link Repository} to coalesce a transaction's updates into one request
+ * - {@link createLoggingRepository} — wrap a {@link Repository} to log each operation and its elapsed time
+ *
  * @module index
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/ SPARQL 1.1 Query Language}
@@ -98,7 +103,7 @@
 import { isArray, isNumber, isObject as isRecord, isString, type Scalar } from "@metreeca/core";
 import { immutable } from "@metreeca/core/deep";
 import { isTag, type Tag } from "@metreeca/core/language";
-import { error } from "@metreeca/core/report";
+import { error, message, time } from "@metreeca/core/report";
 import { type IRI, isIRI } from "@metreeca/core/resource";
 import { createScope } from "@metreeca/core/scope";
 
@@ -839,5 +844,141 @@ export function skolemize(triples: readonly Triple[]): readonly Triple[] {
 	function resolve<T extends Term>(term: T) {
 		return isBlank(term) ? references.resolve(term) : term;
 	}
+
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Wraps a {@link Repository} to coalesce a transaction's updates into a single request.
+ *
+ * Returns a repository that delegates every operation to `repository` unchanged outside a transaction. Within
+ * {@link Repository.execute | execute}, queries still run directly against the transaction scope, but updates are
+ * buffered rather than issued: on successful completion the buffered updates are flushed as one `;`-joined update, and
+ * if the task issues none, no update runs at all. A task that throws or rejects discards the buffer, so no partial
+ * update reaches the backend.
+ *
+ * @param repository - The repository to wrap
+ *
+ * @returns An immutable {@link Repository} that buffers a transaction's updates and flushes them as a single update on
+ * commit
+ */
+export function createBufferingRepository(repository: Repository): Repository {
+	return immutable({
+
+		ask: query => repository.ask(query),
+		select: query => repository.select(query),
+		construct: query => repository.construct(query),
+		update: update => repository.update(update),
+
+		// within a transaction, accumulate the updates and flush them as a single update on commit
+
+		execute: task => repository.execute(async scope => {
+
+			const updates: SPARQL[] = [];
+
+			const value = await task(immutable({
+
+				ask: query => scope.ask(query),
+				select: query => scope.select(query),
+				construct: query => scope.construct(query),
+				update: update => Promise.resolve(void updates.push(update))
+
+			}));
+
+			if ( updates.length > 0 ) {
+				await scope.update(updates.join(";\n"));
+			}
+
+			return value;
+
+		}),
+
+		close: () => repository.close()
+
+	});
+}
+
+/**
+ * Wraps a {@link Repository} to log each operation and its elapsed time.
+ *
+ * Returns a repository that delegates every operation to `repository`, timing each one and reporting it through
+ * `logger`: queries and updates log the elapsed milliseconds alongside the request text, while
+ * {@link Repository.execute | execute} logs the transaction opening, its committed duration, or its abort with the
+ * propagated error. The wrapper is otherwise transparent: results, errors, and isolation guarantees are those of the
+ * wrapped repository.
+ *
+ * @param repository - The repository to wrap
+ * @param logger - The callback invoked with each log message
+ *
+ * @returns An immutable {@link Repository} that delegates to `repository` while logging operation timings
+ */
+export function createLoggingRepository(repository: Repository, logger: (message: string) => void): Repository {
+
+	return immutable({
+
+		ask(query) {
+
+			return time(() => repository.ask(query), (_, elapsed) =>
+				logger(`executed query in <${message(elapsed)}> ms / ${query}`)
+			);
+
+		},
+
+		select(query) {
+
+			return time(() => repository.select(query), (_, elapsed) =>
+				logger(`executed query in <${message(elapsed)}> ms / ${query}`)
+			);
+
+		},
+
+		construct(query) {
+
+			return time(() => repository.construct(query), (_, elapsed) =>
+				logger(`executed query in <${message(elapsed)}> ms / ${query}`)
+			);
+
+		},
+
+		update(update) {
+
+			return time(() => repository.update(update), (_, elapsed) =>
+				logger(`executed update in <${message(elapsed)}> ms / ${update}`)
+			);
+
+		},
+
+
+		async execute(task) {
+
+			logger("opening transaction");
+
+			try {
+
+				return await time(() => repository.execute(task), (_, elapsed) =>
+					logger(`committed transaction in <${message(elapsed)}> ms`)
+				);
+
+			} catch ( error ) {
+
+				logger(`aborted transaction / ${error}`);
+
+				throw error;
+
+			}
+
+		},
+
+		close() {
+
+			logger("closing repository");
+
+			return repository.close();
+
+		}
+
+	});
 
 }

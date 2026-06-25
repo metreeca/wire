@@ -11,6 +11,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `@metreeca/wire-sparql` — `RepositoryClient` interface grouping the `ask`/`select`/`construct`/`update` query and
   update operations
+- `@metreeca/wire-sparql` — `createBufferingRepository` and `createLoggingRepository` wrappers, coalescing a
+  transaction's updates into a single request and logging each operation's elapsed time respectively
 
 ### Changed
 
