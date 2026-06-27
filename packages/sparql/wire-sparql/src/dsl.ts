@@ -31,7 +31,7 @@
 
 import { type Identifier } from "@metreeca/core";
 import { isTag, type Tag, type TagRange } from "@metreeca/core/language";
-import { xsd } from "@metreeca/core/resource";
+import { xsd } from "@metreeca/core/datatype";
 import { escapeIRI, escapeString } from "./dsl.core.js";
 import {
 	type Blank,
