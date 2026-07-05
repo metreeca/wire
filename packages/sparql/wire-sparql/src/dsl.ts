@@ -29,7 +29,7 @@
  * @see {@link https://www.w3.org/TR/n-triples/ RDF 1.1 N-Triples}
  */
 
-import { type Identifier } from "@metreeca/core";
+import { type Identifier, isString } from "@metreeca/core";
 import { isTag, type Tag, type TagRange } from "@metreeca/core/language";
 import { xsd } from "@metreeca/core/datatype";
 import { escapeIRI, escapeString } from "./dsl.core.js";
@@ -54,6 +54,287 @@ import {
  * @see {@link https://www.w3.org/TR/sparql11-query/#abbrevRdfType SPARQL `rdf:type` shorthand}
  */
 const type: Reference = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+
+
+//// Queries ///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Generates a SPARQL `ASK` query.
+ *
+ * Prefixes the space-joined clauses with `ask`, producing a query that tests whether the graph pattern has any solution
+ * and returns a boolean. Supply the pattern as a {@link where} clause.
+ *
+ * @param clauses The query clauses, typically a {@link where} clause
+ *
+ * @returns The SPARQL `ASK` query
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#ask SPARQL 1.1 ASK}
+ */
+export function ask(...clauses: readonly SPARQL[]): SPARQL {
+	return `ask ${fragment(...clauses)}`;
+}
+
+/**
+ * Generates a SPARQL `SELECT` query.
+ *
+ * Prefixes the projection with `select`, followed by the space-joined clauses. The projection is either a single
+ * expression, such as the {@link all} wildcard, or a list of projection variables and {@link as} aliases joined into a
+ * fragment. Supply the graph pattern and solution modifiers as the trailing clauses.
+ *
+ * @param projection The result projection: a single expression, or a list of projection variables and aliases
+ * @param clauses The query clauses, typically a {@link where} clause followed by solution modifiers
+ *
+ * @returns The SPARQL `SELECT` query
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#select SPARQL 1.1 SELECT}
+ */
+export function select(projection: SPARQL | readonly SPARQL[], ...clauses: readonly SPARQL[]): SPARQL {
+	return `select ${isString(projection) ? projection : fragment(...projection)} ${fragment(...clauses)}`;
+}
+
+/**
+ * Generates a SPARQL `distinct` modifier over a projection or aggregate argument.
+ *
+ * Prefixes the space-joined expressions with `distinct`, eliminating duplicate solutions in a `select` projection or
+ * deduplicating an aggregate's input, as in {@link count}. An empty list yields the bare `distinct` keyword.
+ *
+ * @param expressions The projection variables or aggregate argument to deduplicate
+ *
+ * @returns The `distinct` modifier
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#modDuplicates SPARQL 1.1 Duplicate Solutions}
+ */
+export function distinct(...expressions: readonly SPARQL[]): SPARQL {
+	return expressions.length === 0 ? "distinct" : `distinct ${fragment(...expressions)}`;
+}
+
+/**
+ * Generates a SPARQL `reduced` modifier over a projection.
+ *
+ * Prefixes the space-joined projection with `reduced`, permitting but not requiring duplicate elimination, a cheaper
+ * alternative to {@link distinct}. An empty list yields the bare `reduced` keyword.
+ *
+ * @param expressions The projection variables to permit deduplicating
+ *
+ * @returns The `reduced` modifier
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#modReduced SPARQL 1.1 Reduced Solutions}
+ */
+export function reduced(...expressions: readonly SPARQL[]): SPARQL {
+	return expressions.length === 0 ? "reduced" : `reduced ${fragment(...expressions)}`;
+}
+
+/**
+ * Generates the SPARQL `*` projection wildcard.
+ *
+ * @returns The `*` wildcard projecting every in-scope variable, for use as the {@link select} projection
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#select SPARQL 1.1 SELECT}
+ */
+export function all() {
+	return "*"
+}
+
+/**
+ * Generates a SPARQL projection alias, naming a computed expression as a result variable.
+ *
+ * Wraps the expression and variable in the parenthesised `(expr as ?var)` form admitted in a
+ * `select` projection list, where it introduces a computed column. The unparenthesised assignment
+ * form, binding a variable in the WHERE body instead, is {@link bind}.
+ *
+ * @param expression The expression to project
+ * @param variable The result variable the expression is named as
+ *
+ * @returns The parenthesised `(… as …)` projection alias
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#selectExpressions SPARQL 1.1 Select Expressions}
+ */
+export function as(expression: SPARQL, variable: SPARQL): SPARQL {
+	return `(${expression} as ${variable})`;
+}
+
+
+//// Updates ///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Combines SPARQL update operations into a single request.
+ *
+ * Joins the operations with `;`, the separator that sequences multiple operations in one request; they are applied in
+ * order against the graph store, as produced by {@link insert} and {@link deleet}.
+ *
+ * @param updates The update operations to sequence
+ *
+ * @returns The `;`-separated SPARQL update request
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-update/ SPARQL 1.1 Update}
+ */
+export function update(...updates: readonly SPARQL[]): SPARQL {
+	return updates.join("; ");
+}
+
+/**
+ * Generates a SPARQL `DELETE` update removing triples from the graph store.
+ *
+ * Without a `where` argument, produces a ground `delete data` operation removing the `content` triples verbatim. With a
+ * `where` argument, produces a `delete … where` operation removing, for each solution of the pattern, the triples the
+ * `content` template instantiates. Pass `content` as a single serialised block or a list of clauses joined into a
+ * fragment.
+ *
+ * @param content The triples to remove: ground triples for `delete data`, or a triple template for `delete … where`
+ * @param where The optional {@link where} clause selecting solutions to instantiate against; omit for a ground form
+ *
+ * @returns The SPARQL `DELETE` update
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-update/#deleteData SPARQL 1.1 Update — Delete Data}
+ * @see {@link https://www.w3.org/TR/sparql11-update/#deleteInsert SPARQL 1.1 Update — Delete/Insert}
+ */
+export function deleet(content: SPARQL | readonly SPARQL[], where?: SPARQL): SPARQL {
+	return where === undefined
+		? `delete data { ${isString(content) ? content : fragment(...content)} }`
+		: `delete { ${isString(content) ? content : fragment(...content)} } ${where}`;
+}
+
+/**
+ * Generates a SPARQL `INSERT` update adding triples to the graph store.
+ *
+ * Without a `where` argument, produces a ground `insert data` operation adding the `content` triples verbatim. With a
+ * `where` argument, produces an `insert … where` operation adding, for each solution of the pattern, the triples the
+ * `content` template instantiates. Pass `content` as a single serialised block or a list of clauses joined into a
+ * fragment.
+ *
+ * @param content The triples to add: ground triples for `insert data`, or a triple template for `insert … where`
+ * @param where The optional {@link where} clause selecting solutions to instantiate against; omit for a ground form
+ *
+ * @returns The SPARQL `INSERT` update
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-update/#insertData SPARQL 1.1 Update — Insert Data}
+ * @see {@link https://www.w3.org/TR/sparql11-update/#deleteInsert SPARQL 1.1 Update — Delete/Insert}
+ */
+export function insert(content: SPARQL | readonly SPARQL[], where?: SPARQL): SPARQL {
+	return where === undefined
+		? `insert data { ${isString(content) ? content : fragment(...content)} }`
+		: `insert { ${isString(content) ? content : fragment(...content)} } ${where}`;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Generates a SPARQL `WHERE` clause.
+ *
+ * Wraps the space-joined clauses in a `where { … }` block: the graph pattern a {@link select} or {@link ask} query
+ * matches against, and the source a {@link deleet} or {@link insert} update draws its solutions from.
+ *
+ * @param clauses The graph pattern clauses forming the query body
+ *
+ * @returns The SPARQL `WHERE` clause
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#WritingSimpleQueries SPARQL 1.1 Writing Simple Queries}
+ */
+export function where(...clauses: readonly SPARQL[]): SPARQL {
+	return `where { ${fragment(...clauses)} }`;
+}
+
+/**
+ * Generates a SPARQL `GROUP BY` clause.
+ *
+ * Prefixes the space-joined grouping expressions with `group by`, partitioning solutions for aggregation. An empty list
+ * yields the empty fragment, leaving the solutions ungrouped.
+ *
+ * @param expressions The grouping expressions
+ *
+ * @returns The SPARQL `GROUP BY` clause, or the empty fragment for no expressions
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#aggregates SPARQL 1.1 Aggregates}
+ */
+export function groupBy(...expressions: readonly SPARQL[]): SPARQL {
+	return expressions.length === 0 ? nil() : `group by ${fragment(...expressions)}`;
+}
+
+/**
+ * Generates a SPARQL `HAVING` constraint.
+ *
+ * Wraps the constraint in a `having(…)` clause, filtering grouped solutions by an aggregate condition the way
+ * {@link filter} constrains ungrouped ones. Conjoin conditions with {@link and} to constrain on more than one.
+ *
+ * @param constraint The boolean constraint expression over the grouped solutions
+ *
+ * @returns The SPARQL `HAVING` constraint
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#aggregates SPARQL 1.1 Aggregates}
+ */
+export function having(constraint: SPARQL): SPARQL {
+	return `having(${constraint})`;
+}
+
+/**
+ * Generates a SPARQL `ORDER BY` clause.
+ *
+ * Prefixes the space-joined order conditions with `order by`. Each condition is a bare expression for ascending order
+ * or an {@link asc} or {@link desc} wrapper. An empty list yields the empty fragment, leaving the solution sequence
+ * unordered.
+ *
+ * @param conditions The order conditions, in priority order
+ *
+ * @returns The SPARQL `ORDER BY` clause, or the empty fragment for no conditions
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#modOrderBy SPARQL 1.1 Order By}
+ */
+export function orderBy(...conditions: readonly SPARQL[]): SPARQL {
+	return conditions.length === 0 ? nil() : `order by ${fragment(...conditions)}`;
+}
+
+/**
+ * Generates a SPARQL `asc()` ascending order condition.
+ *
+ * @param expression The ordering expression
+ *
+ * @returns The `asc(…)` order condition
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#modOrderBy SPARQL 1.1 Order By}
+ */
+export function asc(expression: SPARQL): SPARQL {
+	return `asc(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `desc()` descending order condition.
+ *
+ * @param expression The ordering expression
+ *
+ * @returns The `desc(…)` order condition
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#modOrderBy SPARQL 1.1 Order By}
+ */
+export function desc(expression: SPARQL): SPARQL {
+	return `desc(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `LIMIT` clause.
+ *
+ * @param count The maximum number of solutions to return
+ *
+ * @returns The SPARQL `LIMIT` clause
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#modResultLimit SPARQL 1.1 Limit}
+ */
+export function limit(count: number): SPARQL {
+	return `limit ${count}`;
+}
+
+/**
+ * Generates a SPARQL `OFFSET` clause.
+ *
+ * @param start The number of leading solutions to skip
+ *
+ * @returns The SPARQL `OFFSET` clause
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#modOffset SPARQL 1.1 Offset}
+ */
+export function offset(start: number): SPARQL {
+	return `offset ${start}`;
+}
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -172,7 +453,9 @@ export function service(endpoint: SPARQL, ...clauses: readonly SPARQL[]): SPARQL
  * @see {@link https://www.w3.org/TR/sparql11-query/#inline-data SPARQL 1.1 Inline Data}
  */
 export function values(variables: readonly SPARQL[], rows: readonly (readonly SPARQL[])[]): SPARQL {
-	return `values (${variables.join(" ")}) { ${rows.map(row => `(${row.join(" ")})`).join(" ")} }`;
+	return `values (${variables.join(" ")}) { ${fragment(...rows.map(row => 
+		`(${row.join(" ")})`
+	))} }`;
 }
 
 /**
@@ -202,6 +485,46 @@ export function fragment(...clauses: readonly SPARQL[]): SPARQL {
  */
 export function edge(subject: SPARQL, predicate: SPARQL, object: SPARQL): SPARQL {
 	return `${subject} ${predicate} ${object} .`;
+}
+
+/**
+ * Generates a SPARQL `FILTER` constraint.
+ *
+ * @param constraint The boolean constraint expression to wrap
+ *
+ * @returns The SPARQL `FILTER` constraint
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#expressions SPARQL 1.1 Filters}
+ */
+export function filter(constraint: SPARQL): SPARQL {
+	return `filter(${constraint})`;
+}
+
+/**
+ * Generates a SPARQL `bind` clause, assigning a computed expression to a variable in the WHERE body.
+ *
+ * Introduces a new in-scope variable bound to the expression's value at the point the clause
+ * appears, so subsequent patterns and filters can reference it. The projection-list counterpart,
+ * naming a computed `select` column, is {@link as}.
+ *
+ * @param expression The expression to assign
+ * @param variable The variable the expression is bound to
+ *
+ * @returns The `bind(… as …)` clause
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#bind SPARQL 1.1 Bind}
+ */
+export function bind(expression: SPARQL, variable: SPARQL): SPARQL {
+	return `bind(${expression} as ${variable})`;
+}
+
+/**
+ * Generates an empty {@link SPARQL} fragment.
+ *
+ * @returns The empty string
+ */
+export function nil(): SPARQL {
+	return "";
 }
 
 
@@ -319,200 +642,6 @@ export function opt(path: SPARQL): SPARQL {
 export function none(...predicates: readonly SPARQL[]): SPARQL {
 	return predicates.length === 1 ? `!${predicates[0]}`
 		: `!(${predicates.join("|")})`;
-}
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/**
- * Generates a SPARQL `FILTER` constraint.
- *
- * @param constraint The boolean constraint expression to wrap
- *
- * @returns The SPARQL `FILTER` constraint
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#expressions SPARQL 1.1 Filters}
- */
-export function filter(constraint: SPARQL): SPARQL {
-	return `filter(${constraint})`;
-}
-
-/**
- * Generates a SPARQL projection alias, naming a computed expression as a result variable.
- *
- * Wraps the expression and variable in the parenthesised `(expr as ?var)` form admitted in a
- * `select` projection list, where it introduces a computed column. The unparenthesised assignment
- * form, binding a variable in the WHERE body instead, is {@link bind}.
- *
- * @param expression The expression to project
- * @param variable The result variable the expression is named as
- *
- * @returns The parenthesised `(… as …)` projection alias
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#selectExpressions SPARQL 1.1 Select Expressions}
- */
-export function alias(expression: SPARQL, variable: SPARQL): SPARQL {
-	return `(${expression} as ${variable})`;
-}
-
-/**
- * Generates a SPARQL `bind` clause, assigning a computed expression to a variable in the WHERE body.
- *
- * Introduces a new in-scope variable bound to the expression's value at the point the clause
- * appears, so subsequent patterns and filters can reference it. The projection-list counterpart,
- * naming a computed `select` column, is {@link alias}.
- *
- * @param expression The expression to assign
- * @param variable The variable the expression is bound to
- *
- * @returns The `bind(… as …)` clause
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#bind SPARQL 1.1 Bind}
- */
-export function bind(expression: SPARQL, variable: SPARQL): SPARQL {
-	return `bind(${expression} as ${variable})`;
-}
-
-/**
- * Generates a SPARQL `asc()` ascending order condition.
- *
- * @param expression The ordering expression
- *
- * @returns The `asc(…)` order condition
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#modOrderBy SPARQL 1.1 Order By}
- */
-export function asc(expression: SPARQL): SPARQL {
-	return `asc(${expression})`;
-}
-
-/**
- * Generates a SPARQL `desc()` descending order condition.
- *
- * @param expression The ordering expression
- *
- * @returns The `desc(…)` order condition
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#modOrderBy SPARQL 1.1 Order By}
- */
-export function desc(expression: SPARQL): SPARQL {
-	return `desc(${expression})`;
-}
-
-/**
- * Generates a SPARQL `ORDER BY` clause.
- *
- * Prefixes the space-joined order conditions with `order by`. Each condition is a bare expression for ascending order
- * or an {@link asc} or {@link desc} wrapper. An empty list yields the empty fragment, leaving the solution sequence
- * unordered.
- *
- * @param conditions The order conditions, in priority order
- *
- * @returns The SPARQL `ORDER BY` clause, or the empty fragment for no conditions
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#modOrderBy SPARQL 1.1 Order By}
- */
-export function orderBy(...conditions: readonly SPARQL[]): SPARQL {
-	return conditions.length === 0 ? nil() : `order by ${fragment(...conditions)}`;
-}
-
-/**
- * Generates a SPARQL `GROUP BY` clause.
- *
- * Prefixes the space-joined grouping expressions with `group by`, partitioning solutions for aggregation. An empty list
- * yields the empty fragment, leaving the solutions ungrouped.
- *
- * @param expressions The grouping expressions
- *
- * @returns The SPARQL `GROUP BY` clause, or the empty fragment for no expressions
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#aggregates SPARQL 1.1 Aggregates}
- */
-export function groupBy(...expressions: readonly SPARQL[]): SPARQL {
-	return expressions.length === 0 ? nil() : `group by ${fragment(...expressions)}`;
-}
-
-/**
- * Generates a SPARQL `HAVING` constraint.
- *
- * Wraps the constraint in a `having(…)` clause, filtering grouped solutions by an aggregate condition the way
- * {@link filter} constrains ungrouped ones. Conjoin conditions with {@link and} to constrain on more than one.
- *
- * @param constraint The boolean constraint expression over the grouped solutions
- *
- * @returns The SPARQL `HAVING` constraint
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#aggregates SPARQL 1.1 Aggregates}
- */
-export function having(constraint: SPARQL): SPARQL {
-	return `having(${constraint})`;
-}
-
-/**
- * Generates a SPARQL `LIMIT` clause.
- *
- * @param count The maximum number of solutions to return
- *
- * @returns The SPARQL `LIMIT` clause
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#modResultLimit SPARQL 1.1 Limit}
- */
-export function limit(count: number): SPARQL {
-	return `limit ${count}`;
-}
-
-/**
- * Generates a SPARQL `OFFSET` clause.
- *
- * @param start The number of leading solutions to skip
- *
- * @returns The SPARQL `OFFSET` clause
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#modOffset SPARQL 1.1 Offset}
- */
-export function offset(start: number): SPARQL {
-	return `offset ${start}`;
-}
-
-/**
- * Generates a SPARQL `distinct` modifier over a projection or aggregate argument.
- *
- * Prefixes the space-joined expressions with `distinct`, eliminating duplicate solutions in a `select` projection or
- * deduplicating an aggregate's input, as in {@link count}. An empty list yields the bare `distinct` keyword.
- *
- * @param expressions The projection variables or aggregate argument to deduplicate
- *
- * @returns The `distinct` modifier
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#modDuplicates SPARQL 1.1 Duplicate Solutions}
- */
-export function distinct(...expressions: readonly SPARQL[]): SPARQL {
-	return expressions.length === 0 ? "distinct" : `distinct ${fragment(...expressions)}`;
-}
-
-/**
- * Generates a SPARQL `reduced` modifier over a projection.
- *
- * Prefixes the space-joined projection with `reduced`, permitting but not requiring duplicate elimination, a cheaper
- * alternative to {@link distinct}. An empty list yields the bare `reduced` keyword.
- *
- * @param expressions The projection variables to permit deduplicating
- *
- * @returns The `reduced` modifier
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#modReduced SPARQL 1.1 Reduced Solutions}
- */
-export function reduced(...expressions: readonly SPARQL[]): SPARQL {
-	return expressions.length === 0 ? "reduced" : `reduced ${fragment(...expressions)}`;
-}
-
-/**
- * Generates an empty {@link SPARQL} fragment.
- *
- * @returns The empty string
- */
-export function nil(): SPARQL {
-	return "";
 }
 
 

@@ -13,11 +13,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   update operations
 - `@metreeca/wire-sparql` — `createBufferingRepository` and `createLoggingRepository` wrappers, coalescing a
   transaction's updates into a single request and logging each operation's elapsed time respectively
+- `@metreeca/wire-sparql` — `./dsl` query and update combinators: `ask`, `select`, `all`, `where`, `insert`, `deleet`,
+  and `update`
 
 ### Changed
 
 - `@metreeca/wire-sparql` — `Repository` now extends `RepositoryClient`, and `Repository.execute` hands the task a
   `RepositoryClient` instead of a full `Repository`
+- `@metreeca/wire-sparql` — renamed the `./dsl` `alias` projection combinator to `as`
 
 ### Removed
 
