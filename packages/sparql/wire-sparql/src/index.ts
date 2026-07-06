@@ -106,6 +106,7 @@ import { isTag, type Tag } from "@metreeca/core/language";
 import { error, message, time } from "@metreeca/core/report";
 import { type IRI, isIRI } from "@metreeca/core/resource";
 import { createScope } from "@metreeca/core/scope";
+import { update } from "./dsl.js";
 
 
 /**
@@ -888,7 +889,7 @@ export function createBufferingRepository(repository: Repository): Repository {
 			}));
 
 			if ( updates.length > 0 ) {
-				await scope.update(updates.join(";\n"));
+				await scope.update(update(...updates));
 			}
 
 			return value;

@@ -566,7 +566,7 @@ describe("wrappers", () => {
 					await client.update("U2");
 				});
 				expect(scope.update).toHaveBeenCalledTimes(1);
-				expect(scope.update).toHaveBeenCalledWith("U1;\nU2");
+				expect(scope.update).toHaveBeenCalledWith("U1; U2");
 			});
 
 			test("issues no update when the task performs none", async () => {

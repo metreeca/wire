@@ -19,18 +19,24 @@ import { escapeIRI, escapeString } from "./dsl.core.js";
 import {
 	abs,
 	add,
+	alt,
+	and,
 	anchor,
 	blank,
 	bnode,
+	call,
 	ceil,
+	coalesce,
 	concat,
 	contains,
 	day,
 	div,
 	encodeForUri,
 	floor,
+	fragment,
 	hours,
 	iri,
+	isIn,
 	isNotIn,
 	lcase,
 	literal,
@@ -38,13 +44,17 @@ import {
 	minutes,
 	month,
 	mul,
+	nil,
+	none,
 	now,
+	or,
 	rand,
 	reference,
 	regex,
 	replace,
 	round,
 	seconds,
+	seq,
 	sha1,
 	sha256,
 	sha384,
@@ -65,7 +75,10 @@ import {
 	typed,
 	tz,
 	ucase,
+	union,
+	update,
 	uuid,
+	values,
 	variable,
 	year
 } from "./dsl.js";
@@ -606,6 +619,96 @@ describe("isNotIn", () => {
 
 	it("should render an empty not-in test for no options", async () => {
 		expect(isNotIn("?x", [])).toBe("?x not in ()");
+	});
+
+});
+
+describe("fragment", () => {
+
+	it("should space-join the clauses", async () => {
+		expect(fragment("a", "b", "c")).toBe("a b c");
+	});
+
+	it("should drop empty clauses to avoid redundant spaces", async () => {
+		expect(fragment("a", nil(), "b")).toBe("a b");
+	});
+
+	it("should drop leading and trailing empty clauses", async () => {
+		expect(fragment(nil(), "a", nil())).toBe("a");
+	});
+
+	it("should yield the empty fragment when every clause is empty", async () => {
+		expect(fragment(nil(), nil())).toBe("");
+	});
+
+});
+
+describe("update", () => {
+
+	it("should join the operations with a separator", async () => {
+		expect(update("a", "b", "c")).toBe("a; b; c");
+	});
+
+	it("should drop empty operations to avoid redundant separators", async () => {
+		expect(update("a", nil(), "b")).toBe("a; b");
+	});
+
+	it("should yield the empty request when every operation is empty", async () => {
+		expect(update(nil(), nil())).toBe("");
+	});
+
+});
+
+describe("empty clause filtering", () => {
+
+	it("should drop empty clauses in union", async () => {
+		expect(union("a", nil(), "b")).toBe("{ a } union { b }");
+		expect(union("a", nil())).toBe("a");
+	});
+
+	it("should drop empty elements in seq", async () => {
+		expect(seq("a", nil(), "b")).toBe("a/b");
+	});
+
+	it("should drop empty elements in alt", async () => {
+		expect(alt("a", nil(), "b")).toBe("a|b");
+	});
+
+	it("should drop empty predicates in none", async () => {
+		expect(none("a", nil(), "b")).toBe("!(a|b)");
+		expect(none("a", nil())).toBe("!a");
+	});
+
+	it("should drop empty conditions in and", async () => {
+		expect(and("a", nil(), "b")).toBe("a && b");
+	});
+
+	it("should drop empty conditions in or", async () => {
+		expect(or("a", nil(), "b")).toBe("a || b");
+	});
+
+	it("should drop empty expressions in coalesce", async () => {
+		expect(coalesce("a", nil(), "b")).toBe("coalesce(a, b)");
+	});
+
+	it("should drop empty options in isIn", async () => {
+		expect(isIn("?x", ["a", nil(), "b"])).toBe("?x in (a, b)");
+	});
+
+	it("should drop empty options in isNotIn", async () => {
+		expect(isNotIn("?x", ["a", nil(), "b"])).toBe("?x not in (a, b)");
+	});
+
+	it("should drop empty arguments in call", async () => {
+		expect(call("fn", "a", nil(), "b")).toBe("fn(a, b)");
+	});
+
+	it("should drop empty expressions in concat", async () => {
+		expect(concat("a", nil(), "b")).toBe("concat(a, b)");
+	});
+
+	it("should drop empty variables and row terms in values", async () => {
+		expect(values(["?x", nil(), "?y"], [["a", nil(), "b"]])).toBe("values (?x ?y) { (a b) }");
 	});
 
 });

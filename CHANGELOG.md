@@ -27,6 +27,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `@metreeca/wire-sparql` — `Repository` now extends `RepositoryClient`, and `Repository.execute` hands the task a
   `RepositoryClient` instead of a full `Repository`
 - `@metreeca/wire-sparql` — renamed the `./dsl` `alias` projection combinator to `as`
+- `@metreeca/wire-sparql` — `./dsl` variadic combinators now drop empty operands (such as those produced by `nil`)
+  before joining, so optional operands left out introduce no redundant separators
 
 ### Removed
 

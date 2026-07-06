@@ -31,8 +31,9 @@
  */
 
 import { type Identifier, isString } from "@metreeca/core";
-import { isTag, type Tag, type TagRange } from "@metreeca/core/language";
+import { map } from "@metreeca/core/combo";
 import { xsd } from "@metreeca/core/datatype";
+import { isTag, type Tag, type TagRange } from "@metreeca/core/language";
 import { escapeIRI, escapeString } from "./dsl.core.js";
 import {
 	type Blank,
@@ -63,16 +64,18 @@ const type: Reference = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
  * Combines SPARQL update operations into a single request.
  *
  * Joins the operations with `;`, the separator that sequences multiple operations in one request; they are applied in
- * order against the graph store, as produced by {@link insert} and {@link deleet}.
+ * order against the graph store, as produced by {@link insert} and {@link deleet}. Empty operations, such as those
+ * produced by {@link nil}, are dropped before joining, so optional operations left out do not introduce redundant
+ * separators.
  *
  * @param updates The update operations to sequence
  *
- * @returns The `;`-separated SPARQL update request
+ * @returns The `;`-separated SPARQL update request, excluding empty operations
  *
  * @see {@link https://www.w3.org/TR/sparql11-update/ SPARQL 1.1 Update}
  */
 export function update(...updates: readonly SPARQL[]): SPARQL {
-	return updates.join("; ");
+	return updates.filter(operation => operation !== "").join("; ");
 }
 
 /**
@@ -196,7 +199,7 @@ export function reduced(...expressions: readonly SPARQL[]): SPARQL {
  * @see {@link https://www.w3.org/TR/sparql11-query/#select SPARQL 1.1 SELECT}
  */
 export function all() {
-	return "*"
+	return "*";
 }
 
 /**
@@ -343,9 +346,9 @@ export function offset(start: number): SPARQL {
 /**
  * Generates a SPARQL `UNION` pattern.
  *
- * A single clause is returned as-is; multiple clauses are wrapped in {@link group | groups} and joined with `union`.
- * An empty list yields the empty fragment via {@link nil}, which callers must guard against where a pattern is
- * required.
+ * Empty clauses, such as those produced by {@link nil}, are dropped first; a single surviving clause is returned
+ * as-is, while several are wrapped in {@link group | groups} and joined with `union`. When none survives, the result
+ * is the empty fragment via {@link nil}, which callers must guard against where a pattern is required.
  *
  * @param clauses The graph pattern clauses to combine
  *
@@ -354,9 +357,11 @@ export function offset(start: number): SPARQL {
  * @see {@link https://www.w3.org/TR/sparql11-query/#alternatives SPARQL 1.1 Alternative Patterns}
  */
 export function union(...clauses: readonly SPARQL[]): SPARQL {
-	return clauses.length === 0 ? nil()
-		: clauses.length === 1 ? clauses[0]
-			: clauses.map(clause => group(clause)).join(" union ");
+	return map(clauses.filter(clause => clause !== ""), patterns =>
+		patterns.length === 0 ? nil()
+			: patterns.length === 1 ? patterns[0]
+				: patterns.map(clause => group(clause)).join(" union ")
+	);
 }
 
 /**
@@ -444,7 +449,9 @@ export function service(endpoint: SPARQL, ...clauses: readonly SPARQL[]): SPARQL
  *
  * Binds the `variables` to each row of `rows` in turn, supplying inline solutions the enclosing pattern joins against.
  * Every row lists one value per variable, using the `undef` keyword for an unbound position. An empty row list yields
- * an empty `values (…) { }` block matching nothing.
+ * an empty `values (…) { }` block matching nothing. Empty variables and terms, such as those produced by {@link nil},
+ * are dropped before joining, so a position marked unbound must use `undef` rather than an empty fragment to keep rows
+ * aligned with the variable list.
  *
  * @param variables The serialised variables bound by the block
  * @param rows The value rows, each a list of serialised terms positionally aligned with `variables`
@@ -454,20 +461,23 @@ export function service(endpoint: SPARQL, ...clauses: readonly SPARQL[]): SPARQL
  * @see {@link https://www.w3.org/TR/sparql11-query/#inline-data SPARQL 1.1 Inline Data}
  */
 export function values(variables: readonly SPARQL[], rows: readonly (readonly SPARQL[])[]): SPARQL {
-	return `values (${variables.join(" ")}) { ${fragment(...rows.map(row =>
-		`(${row.join(" ")})`
+	return `values (${variables.filter(variable => variable !== "").join(" ")}) { ${fragment(...rows.map(row =>
+		`(${row.filter(term => term !== "").join(" ")})`
 	))} }`;
 }
 
 /**
  * Generates a single {@link SPARQL} fragment by joining clauses.
  *
+ * Empty clauses, such as those produced by {@link nil}, are dropped before joining, so optional clauses left out do not
+ * introduce redundant spaces.
+ *
  * @param clauses The clauses to join
  *
- * @returns The space-joined fragment
+ * @returns The space-joined fragment, excluding empty clauses
  */
 export function fragment(...clauses: readonly SPARQL[]): SPARQL {
-	return clauses.join(" ");
+	return clauses.filter(clause => clause !== "").join(" ");
 }
 
 /**
@@ -535,33 +545,34 @@ export function nil(): SPARQL {
  * Generates a SPARQL sequence property path.
  *
  * Joins the path elements with `/`, matching nodes reached by following each element in turn. A sequence binds tighter
- * than an {@link alt | alternative}, so it nests inside one without parentheses; a single element is returned
- * unchanged.
+ * than an {@link alt | alternative}, so it nests inside one without parentheses. Empty elements, such as those produced
+ * by {@link nil}, are dropped first, and a single surviving element is returned unchanged.
  *
  * @param paths The path elements to chain, in traversal order
  *
- * @returns The `/`-joined sequence path
+ * @returns The `/`-joined sequence path, excluding empty elements
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#propertypaths SPARQL 1.1 Property Paths}
  */
 export function seq(...paths: readonly SPARQL[]): SPARQL {
-	return paths.join("/");
+	return paths.filter(path => path !== "").join("/");
 }
 
 /**
  * Generates a SPARQL alternative property path.
  *
  * Joins the path elements with `|`, matching nodes reachable by any one of them. As the lowest-precedence path
- * operator, it admits {@link seq | sequences} as elements without parentheses; a single element is returned unchanged.
+ * operator, it admits {@link seq | sequences} as elements without parentheses. Empty elements, such as those produced
+ * by {@link nil}, are dropped first, and a single surviving element is returned unchanged.
  *
  * @param paths The alternative path elements
  *
- * @returns The `|`-joined alternative path
+ * @returns The `|`-joined alternative path, excluding empty elements
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#propertypaths SPARQL 1.1 Property Paths}
  */
 export function alt(...paths: readonly SPARQL[]): SPARQL {
-	return paths.join("|");
+	return paths.filter(path => path !== "").join("|");
 }
 
 /**
@@ -632,7 +643,8 @@ export function opt(path: SPARQL): SPARQL {
  * Generates a SPARQL none property set.
  *
  * Prefixes the predicate set with `!`, matching any predicate outside it; an {@link inv | inverse} entry negates the
- * reverse direction. A single predicate renders as `!pred`; several render as the parenthesised `!(a|b)` form.
+ * reverse direction. Empty predicates, such as those produced by {@link nil}, are dropped first; a single surviving
+ * predicate renders as `!pred`, while several render as the parenthesised `!(a|b)` form.
  *
  * @param predicates The forbidden predicates, each an IRI reference or the inverse of one
  *
@@ -641,8 +653,9 @@ export function opt(path: SPARQL): SPARQL {
  * @see {@link https://www.w3.org/TR/sparql11-query/#propertypaths SPARQL 1.1 Property Paths}
  */
 export function none(...predicates: readonly SPARQL[]): SPARQL {
-	return predicates.length === 1 ? `!${predicates[0]}`
-		: `!(${predicates.join("|")})`;
+	return map(predicates.filter(predicate => predicate !== ""), set =>
+		set.length === 1 ? `!${set[0]}` : `!(${set.join("|")})`
+	);
 }
 
 
@@ -668,34 +681,36 @@ export function not(condition: SPARQL): SPARQL {
  * Generates a SPARQL logical conjunction (`&&`) of boolean expressions.
  *
  * Joins the operands with `&&`, which binds tighter than the `||` of {@link or}, so an `and` term
- * nests inside an `or` without parentheses. A single operand is returned unchanged; an empty list
- * yields the empty fragment, which callers must guard against where a constraint is required.
+ * nests inside an `or` without parentheses. Empty operands, such as those produced by {@link nil}, are
+ * dropped first; a single surviving operand is returned unchanged, and no surviving operand yields the
+ * empty fragment, which callers must guard against where a constraint is required.
  *
  * @param conditions The boolean expressions to conjoin
  *
- * @returns The `&&`-joined conjunction
+ * @returns The `&&`-joined conjunction, excluding empty operands
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#func-logical-and SPARQL 1.1 Logical And}
  */
 export function and(...conditions: readonly SPARQL[]): SPARQL {
-	return conditions.join(" && ");
+	return conditions.filter(condition => condition !== "").join(" && ");
 }
 
 /**
  * Generates a SPARQL logical disjunction (`||`) of boolean expressions.
  *
  * Joins the operands with `||`, the lowest-precedence boolean operator, so {@link and} conjunctions
- * nest inside without parentheses. A single operand is returned unchanged; an empty list yields the
- * empty fragment, which callers must guard against where a constraint is required.
+ * nest inside without parentheses. Empty operands, such as those produced by {@link nil}, are dropped
+ * first; a single surviving operand is returned unchanged, and no surviving operand yields the empty
+ * fragment, which callers must guard against where a constraint is required.
  *
  * @param conditions The boolean expressions to disjoin
  *
- * @returns The `||`-joined disjunction
+ * @returns The `||`-joined disjunction, excluding empty operands
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#func-logical-or SPARQL 1.1 Logical Or}
  */
 export function or(...conditions: readonly SPARQL[]): SPARQL {
-	return conditions.join(" || ");
+	return conditions.filter(condition => condition !== "").join(" || ");
 }
 
 
@@ -879,7 +894,8 @@ export function iif(condition: SPARQL, then: SPARQL, otherwise: SPARQL): SPARQL 
  *
  * Yields the value of the first listed expression that is bound and raises no evaluation error,
  * scanning left to right; the call is itself unbound only when every argument is. Used to supply a
- * fallback where an inner expression may be unbound or out of domain.
+ * fallback where an inner expression may be unbound or out of domain. Empty argument expressions, such
+ * as those produced by {@link nil}, are dropped before joining.
  *
  * @param expressions The candidate expressions, in priority order
  *
@@ -888,7 +904,7 @@ export function iif(condition: SPARQL, then: SPARQL, otherwise: SPARQL): SPARQL 
  * @see {@link https://www.w3.org/TR/sparql11-query/#func-coalesce SPARQL 1.1 coalesce}
  */
 export function coalesce(...expressions: readonly SPARQL[]): SPARQL {
-	return `coalesce(${expressions.join(", ")})`;
+	return `coalesce(${expressions.filter(expression => expression !== "").join(", ")})`;
 }
 
 /**
@@ -911,9 +927,10 @@ export function isBound(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL set-membership (`IN`) test.
  *
- * Evaluates to `true` when the expression equals any listed option under value comparison. An empty
- * option list renders `in ()`, which is always `false`, so callers that treat an empty set as
- * unconstrained must guard the call.
+ * Evaluates to `true` when the expression equals any listed option under value comparison. Empty
+ * options, such as those produced by {@link nil}, are dropped first; an empty option list renders
+ * `in ()`, which is always `false`, so callers that treat an empty set as unconstrained must guard the
+ * call.
  *
  * @param expression The expression to test
  * @param options The candidate value expressions
@@ -923,15 +940,16 @@ export function isBound(expression: SPARQL): SPARQL {
  * @see {@link https://www.w3.org/TR/sparql11-query/#func-in SPARQL 1.1 In}
  */
 export function isIn(expression: SPARQL, options: readonly SPARQL[]): SPARQL {
-	return `${expression} in (${options.join(", ")})`;
+	return `${expression} in (${options.filter(option => option !== "").join(", ")})`;
 }
 
 /**
  * Generates a SPARQL set-non-membership (`NOT IN`) test.
  *
  * The negation of {@link isIn}: evaluates to `true` when the expression equals none of the listed
- * options under value comparison. An empty option list renders `not in ()`, which is always `true`,
- * so callers that treat an empty set as unconstrained must guard the call.
+ * options under value comparison. Empty options, such as those produced by {@link nil}, are dropped
+ * first; an empty option list renders `not in ()`, which is always `true`, so callers that treat an
+ * empty set as unconstrained must guard the call.
  *
  * @param expression The expression to test
  * @param options The candidate value expressions
@@ -941,7 +959,7 @@ export function isIn(expression: SPARQL, options: readonly SPARQL[]): SPARQL {
  * @see {@link https://www.w3.org/TR/sparql11-query/#func-not-in SPARQL 1.1 Not In}
  */
 export function isNotIn(expression: SPARQL, options: readonly SPARQL[]): SPARQL {
-	return `${expression} not in (${options.join(", ")})`;
+	return `${expression} not in (${options.filter(option => option !== "").join(", ")})`;
 }
 
 /**
@@ -981,8 +999,9 @@ export function nexists(...patterns: readonly SPARQL[]): SPARQL {
  * Generates a SPARQL function call from a function name and argument expressions.
  *
  * The generic escape hatch for SPARQL functions without a dedicated builder ({@link str},
- * {@link datatype}, …): renders `fn(arg, …)` with the arguments comma-joined. The name is emitted
- * verbatim, so the caller upholds the lowercase generated-token convention.
+ * {@link datatype}, …): renders `fn(arg, …)` with the arguments comma-joined. Empty arguments, such as
+ * those produced by {@link nil}, are dropped first. The name is emitted verbatim, so the caller upholds
+ * the lowercase generated-token convention.
  *
  * @param fn The SPARQL function name
  * @param args The argument expressions, in order
@@ -992,7 +1011,7 @@ export function nexists(...patterns: readonly SPARQL[]): SPARQL {
  * @see {@link https://www.w3.org/TR/sparql11-query/#SparqlOps SPARQL 1.1 Function Library}
  */
 export function call(fn: Identifier, ...args: readonly SPARQL[]): SPARQL {
-	return `${fn}(${args.join(", ")})`;
+	return `${fn}(${args.filter(arg => arg !== "").join(", ")})`;
 }
 
 
@@ -1374,7 +1393,8 @@ export function encodeForUri(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `concat()` call joining string expressions.
  *
- * Concatenates the arguments left to right into a single string.
+ * Concatenates the arguments left to right into a single string. Empty argument expressions, such as those produced by
+ * {@link nil}, are dropped before joining.
  *
  * @param expressions The expressions evaluating to the strings to join, in order
  *
@@ -1383,7 +1403,7 @@ export function encodeForUri(expression: SPARQL): SPARQL {
  * @see {@link https://www.w3.org/TR/sparql11-query/#func-concat SPARQL 1.1 CONCAT}
  */
 export function concat(...expressions: readonly SPARQL[]): SPARQL {
-	return `concat(${expressions.join(", ")})`;
+	return `concat(${expressions.filter(expression => expression !== "").join(", ")})`;
 }
 
 /**
