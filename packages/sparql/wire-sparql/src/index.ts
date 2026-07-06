@@ -904,10 +904,10 @@ export function createBufferingRepository(repository: Repository): Repository {
  * Wraps a {@link Repository} to log each operation and its elapsed time.
  *
  * Returns a repository that delegates every operation to `repository`, timing each one and reporting it through
- * `logger`: queries and updates log the elapsed milliseconds alongside the request text, while
- * {@link Repository.execute | execute} logs the transaction opening, its committed duration, or its abort with the
- * propagated error. The wrapper is otherwise transparent: results, errors, and isolation guarantees are those of the
- * wrapped repository.
+ * `logger`: queries and updates log the elapsed milliseconds alongside the request text, whether issued directly or
+ * through the transaction scope handed to an {@link Repository.execute | execute} task, while `execute` additionally
+ * logs the transaction opening, its committed duration, or its abort with the propagated error. The wrapper is
+ * otherwise transparent: results, errors, and isolation guarantees are those of the wrapped repository.
  *
  * @param repository - The repository to wrap
  * @param logger - The callback invoked with each log message
@@ -918,38 +918,7 @@ export function createLoggingRepository(repository: Repository, logger: (message
 
 	return immutable({
 
-		ask(query) {
-
-			return time(() => repository.ask(query), (_, elapsed) =>
-				logger(`executed query in <${message(elapsed)}> ms / ${query}`)
-			);
-
-		},
-
-		select(query) {
-
-			return time(() => repository.select(query), (_, elapsed) =>
-				logger(`executed query in <${message(elapsed)}> ms / ${query}`)
-			);
-
-		},
-
-		construct(query) {
-
-			return time(() => repository.construct(query), (_, elapsed) =>
-				logger(`executed query in <${message(elapsed)}> ms / ${query}`)
-			);
-
-		},
-
-		update(update) {
-
-			return time(() => repository.update(update), (_, elapsed) =>
-				logger(`executed update in <${message(elapsed)}> ms / ${update}`)
-			);
-
-		},
-
+		...logging(repository, logger),
 
 		async execute(task) {
 
@@ -957,7 +926,7 @@ export function createLoggingRepository(repository: Repository, logger: (message
 
 			try {
 
-				return await time(() => repository.execute(task), (_, elapsed) =>
+				return await time(() => repository.execute(scope => task(logging(scope, logger))), (_, elapsed) =>
 					logger(`committed transaction in <${message(elapsed)}> ms`)
 				);
 
@@ -980,5 +949,53 @@ export function createLoggingRepository(repository: Repository, logger: (message
 		}
 
 	});
+
+
+	/**
+	 * Wraps a {@link RepositoryClient} to log each query and update with its elapsed time.
+	 *
+	 * Shared by {@link createLoggingRepository} for both the top-level client surface and the per-transaction scope
+	 * handed to an {@link Repository.execute | execute} task, so operations issued within a transaction are logged
+	 * just like those issued directly.
+	 */
+	function logging(client: RepositoryClient, logger: (message: string) => void): RepositoryClient {
+
+		return immutable({
+
+			ask(query) {
+
+				return time(() => client.ask(query), (_, elapsed) =>
+					logger(`executed query in <${message(elapsed)}> ms / ${query}`)
+				);
+
+			},
+
+			select(query) {
+
+				return time(() => client.select(query), (_, elapsed) =>
+					logger(`executed query in <${message(elapsed)}> ms / ${query}`)
+				);
+
+			},
+
+			construct(query) {
+
+				return time(() => client.construct(query), (_, elapsed) =>
+					logger(`executed query in <${message(elapsed)}> ms / ${query}`)
+				);
+
+			},
+
+			update(update) {
+
+				return time(() => client.update(update), (_, elapsed) =>
+					logger(`executed update in <${message(elapsed)}> ms / ${update}`)
+				);
+
+			}
+
+		});
+
+	}
 
 }

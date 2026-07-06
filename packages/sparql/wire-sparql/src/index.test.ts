@@ -19,6 +19,7 @@ import type { Repository, Triple, Tuple } from "./index.js";
 import {
 	blank,
 	createBufferingRepository,
+	createLoggingRepository,
 	graph,
 	isBlank,
 	isGraph,
@@ -598,6 +599,131 @@ describe("wrappers", () => {
 					throw new Error("boom");
 				})).rejects.toThrow();
 				expect(scope.update).not.toHaveBeenCalled();
+			});
+
+		});
+
+	});
+
+	describe("createLoggingRepository", () => {
+
+		const rows = [tuple({ "?x": reference("http://example.com/") })];
+		const statements = [triple("http://example.com/s", "a", reference("http://example.com/o"))];
+
+		// a recording repository whose execute hands the task a separate, observable transaction scope
+
+		function fakeRepository() {
+
+			const scope = {
+				ask: vi.fn(async (): Promise<boolean> => true),
+				select: vi.fn(async (): Promise<readonly Tuple[]> => rows),
+				construct: vi.fn(async (): Promise<readonly Triple[]> => statements),
+				update: vi.fn(async (): Promise<void> => {})
+			};
+
+			const repository: Repository = {
+				ask: vi.fn(async (): Promise<boolean> => true),
+				select: vi.fn(async (): Promise<readonly Tuple[]> => rows),
+				construct: vi.fn(async (): Promise<readonly Triple[]> => statements),
+				update: vi.fn(async (): Promise<void> => {}),
+				execute: task => Promise.resolve(task(scope)),
+				close: vi.fn(async (): Promise<void> => {})
+			};
+
+			return { repository, scope };
+		}
+
+		// the messages logged across a run
+
+		function logged(logger: ReturnType<typeof vi.fn<(message: string) => void>>) {
+			return logger.mock.calls.map(([message]) => message);
+		}
+
+
+		describe("outside a transaction", () => {
+
+			test("logs each query with its elapsed time and request text", async () => {
+				const { repository } = fakeRepository();
+				const logger = vi.fn<(message: string) => void>();
+				await createLoggingRepository(repository, logger).ask("ASK");
+				expect(logged(logger).some(message => message.includes("executed query in") && message.includes("ASK"))).toBe(true);
+			});
+
+			test("logs each update with its elapsed time and request text", async () => {
+				const { repository } = fakeRepository();
+				const logger = vi.fn<(message: string) => void>();
+				await createLoggingRepository(repository, logger).update("INSERT");
+				expect(logged(logger).some(message => message.includes("executed update in") && message.includes("INSERT"))).toBe(true);
+			});
+
+			test("delegates the query result unchanged", async () => {
+				const { repository } = fakeRepository();
+				await expect(createLoggingRepository(repository, vi.fn()).select("SELECT")).resolves.toEqual(rows);
+			});
+
+			test("logs closing the repository", async () => {
+				const { repository } = fakeRepository();
+				const logger = vi.fn<(message: string) => void>();
+				await createLoggingRepository(repository, logger).close();
+				expect(logged(logger)).toContain("closing repository");
+			});
+
+		});
+
+		describe("within a transaction", () => {
+
+			test("logs the transaction opening and commit", async () => {
+				const { repository } = fakeRepository();
+				const logger = vi.fn<(message: string) => void>();
+				await createLoggingRepository(repository, logger).execute(async () => {});
+				expect(logged(logger)).toContain("opening transaction");
+				expect(logged(logger).some(message => message.includes("committed transaction in"))).toBe(true);
+			});
+
+			test("logs queries issued through the transaction client", async () => {
+				const { repository } = fakeRepository();
+				const logger = vi.fn<(message: string) => void>();
+				await createLoggingRepository(repository, logger).execute(async client => {
+					await client.ask("ASK");
+					await client.select("SELECT");
+					await client.construct("CONSTRUCT");
+				});
+				expect(logged(logger).some(message => message.includes("executed query in") && message.includes("ASK"))).toBe(true);
+				expect(logged(logger).some(message => message.includes("executed query in") && message.includes("SELECT"))).toBe(true);
+				expect(logged(logger).some(message => message.includes("executed query in") && message.includes("CONSTRUCT"))).toBe(true);
+			});
+
+			test("logs updates issued through the transaction client", async () => {
+				const { repository } = fakeRepository();
+				const logger = vi.fn<(message: string) => void>();
+				await createLoggingRepository(repository, logger).execute(async client => {
+					await client.update("INSERT");
+				});
+				expect(logged(logger).some(message => message.includes("executed update in") && message.includes("INSERT"))).toBe(true);
+			});
+
+			test("forwards transaction operations to the underlying scope", async () => {
+				const { repository, scope } = fakeRepository();
+				await createLoggingRepository(repository, vi.fn()).execute(async client => {
+					await client.ask("ASK");
+					await client.update("INSERT");
+				});
+				expect(scope.ask).toHaveBeenCalledWith("ASK");
+				expect(scope.update).toHaveBeenCalledWith("INSERT");
+			});
+
+			test("resolves to the value returned by the task", async () => {
+				const { repository } = fakeRepository();
+				await expect(createLoggingRepository(repository, vi.fn()).execute(async () => 42)).resolves.toBe(42);
+			});
+
+			test("logs the abort with the propagated error and rethrows", async () => {
+				const { repository } = fakeRepository();
+				const logger = vi.fn<(message: string) => void>();
+				await expect(createLoggingRepository(repository, logger).execute(async () => {
+					throw new Error("boom");
+				})).rejects.toThrow("boom");
+				expect(logged(logger).some(message => message.includes("aborted transaction") && message.includes("boom"))).toBe(true);
 			});
 
 		});
