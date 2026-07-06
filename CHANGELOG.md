@@ -34,6 +34,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `@metreeca/wire-sparql` — `rdf` and `xsd` namespace exports; the `xsd` datatype namespace is now sourced from
   `@metreeca/core`
+- `@metreeca/wire-sparql` — `./rdf` `Some` type export; the zero/one/many input shape is now sourced from
+  `@metreeca/core`
 
 ## [0.9.0](https://github.com/metreeca/wire/releases/tag/v0.9.0)
 

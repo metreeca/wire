@@ -71,6 +71,7 @@
  */
 
 import { type Scalar } from "@metreeca/core";
+import { list, type Some } from "@metreeca/core/combo";
 import { Tag } from "@metreeca/core/language";
 import {
 	type Graph,
@@ -86,16 +87,6 @@ import {
 	typed
 } from "@metreeca/wire-sparql";
 
-
-/**
- * Zero, one, or many values of type `T`.
- *
- * The uniform input shape accepted across the DSL, letting encoders forward optional, scalar, or array-valued
- * properties without branching: the `values` helper normalises every case to an array.
- *
- * @typeParam T - The element type carried in the single-value and array cases
- */
-export type Some<T> = undefined | T | readonly T[];
 
 /**
  * Maps a domain value to its RDF rendering: either a single {@link Term} or a whole {@link Graph}.
@@ -190,7 +181,7 @@ export function property<V>(subject: Some<Subject>, predicate: Predicate, object
 
 	if ( mapper ) {
 
-		return values(objects).flatMap(object => {
+		return list(objects).flatMap(object => {
 
 			const rdf = mapper(object);
 
@@ -202,8 +193,8 @@ export function property<V>(subject: Some<Subject>, predicate: Predicate, object
 
 	} else { // ;(cast) the non-embedded overload accepts only Some<Object>, so each object is a Term
 
-		return values(subject).flatMap(subject =>
-			values(objects).map(object => [subject, predicate, object as Object])
+		return list(subject).flatMap(subject =>
+			list(objects).map(object => [subject, predicate, object as Object])
 		);
 
 	}
@@ -289,8 +280,8 @@ export function data(data: Some<Scalar>, datatype?: Reference): readonly Typed[]
  * @returns The encoded tagged and plain literals
  */
 export function text(text: Some<{ [tag: Tag]: Some<string> }>): readonly (Tagged | Typed)[] {
-	return values(text).flatMap(text => Object.entries(text).flatMap(([tag, content]) =>
-		values(content).map(value => tag === "und" ? typed(value) : tagged(value, tag))
+	return list(text).flatMap(text => Object.entries(text).flatMap(([tag, content]) =>
+		list(content).map(value => tag === "und" ? typed(value) : tagged(value, tag))
 	));
 }
 
@@ -309,12 +300,5 @@ export function text(text: Some<{ [tag: Tag]: Some<string> }>): readonly (Tagged
  * @returns The encoded terms, one per source value
  */
 export function term<V, T extends Term>(source: Some<V>, encoder: (value: V) => T): readonly T[] {
-	return values(source).map(encoder);
-}
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-function values<T>(values: Some<T>): readonly T[] {
-	return values === undefined ? [] : new Array<T>().concat(values);
+	return list(source).map(encoder);
 }
