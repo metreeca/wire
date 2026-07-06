@@ -16,7 +16,59 @@
 
 import { describe, expect, it } from "vitest";
 import { escapeIRI, escapeString } from "./dsl.core.js";
-import { anchor, blank, literal, reference, tagged, term, typed, variable } from "./dsl.js";
+import {
+	abs,
+	add,
+	anchor,
+	blank,
+	bnode,
+	ceil,
+	concat,
+	contains,
+	day,
+	div,
+	encodeForUri,
+	floor,
+	hours,
+	iri,
+	isNotIn,
+	lcase,
+	literal,
+	md5,
+	minutes,
+	month,
+	mul,
+	now,
+	rand,
+	reference,
+	regex,
+	replace,
+	round,
+	seconds,
+	sha1,
+	sha256,
+	sha384,
+	sha512,
+	strafter,
+	strbefore,
+	strdt,
+	strends,
+	strlang,
+	strlen,
+	strstarts,
+	struuid,
+	sub,
+	substr,
+	tagged,
+	term,
+	timezone,
+	typed,
+	tz,
+	ucase,
+	uuid,
+	variable,
+	year
+} from "./dsl.js";
 
 
 describe("terms", () => {
@@ -251,6 +303,309 @@ describe("escape", () => {
 			expect(escapeString("")).toBe("");
 		});
 
+	});
+
+});
+
+describe("arithmetic operators", () => {
+
+	describe("add", () => {
+		it("should render a parenthesised sum", async () => {
+			expect(add("?x", "?y")).toBe("(?x + ?y)");
+		});
+	});
+
+	describe("sub", () => {
+		it("should render a parenthesised difference", async () => {
+			expect(sub("?x", "?y")).toBe("(?x - ?y)");
+		});
+	});
+
+	describe("mul", () => {
+		it("should render a parenthesised product", async () => {
+			expect(mul("?x", "?y")).toBe("(?x * ?y)");
+		});
+	});
+
+	describe("div", () => {
+		it("should render a parenthesised quotient", async () => {
+			expect(div("?x", "?y")).toBe("(?x / ?y)");
+		});
+	});
+
+});
+
+describe("term constructors", () => {
+
+	describe("iri", () => {
+		it("should render an iri call", async () => {
+			expect(iri("?s")).toBe("iri(?s)");
+		});
+	});
+
+	describe("bnode", () => {
+		it("should render a nullary bnode call when the argument is omitted", async () => {
+			expect(bnode()).toBe("bnode()");
+		});
+		it("should render a bnode call over the correlating argument", async () => {
+			expect(bnode("?x")).toBe("bnode(?x)");
+		});
+	});
+
+	describe("strdt", () => {
+		it("should render a strdt call pairing lexical form and datatype", async () => {
+			expect(strdt("?v", "?d")).toBe("strdt(?v, ?d)");
+		});
+	});
+
+	describe("strlang", () => {
+		it("should render a strlang call pairing lexical form and language", async () => {
+			expect(strlang("?v", "?l")).toBe("strlang(?v, ?l)");
+		});
+	});
+
+	describe("uuid", () => {
+		it("should render a nullary uuid call", async () => {
+			expect(uuid()).toBe("uuid()");
+		});
+	});
+
+	describe("struuid", () => {
+		it("should render a nullary struuid call", async () => {
+			expect(struuid()).toBe("struuid()");
+		});
+	});
+
+});
+
+describe("string functions", () => {
+
+	describe("strlen", () => {
+		it("should render a strlen call", async () => {
+			expect(strlen("?s")).toBe("strlen(?s)");
+		});
+	});
+
+	describe("substr", () => {
+		it("should render a two-argument substr call when length is omitted", async () => {
+			expect(substr("?s", "2")).toBe("substr(?s, 2)");
+		});
+		it("should render a three-argument substr call when length is supplied", async () => {
+			expect(substr("?s", "2", "4")).toBe("substr(?s, 2, 4)");
+		});
+	});
+
+	describe("ucase", () => {
+		it("should render a ucase call", async () => {
+			expect(ucase("?s")).toBe("ucase(?s)");
+		});
+	});
+
+	describe("lcase", () => {
+		it("should render an lcase call", async () => {
+			expect(lcase("?s")).toBe("lcase(?s)");
+		});
+	});
+
+	describe("strstarts", () => {
+		it("should render a strstarts call", async () => {
+			expect(strstarts("?s", "?p")).toBe("strstarts(?s, ?p)");
+		});
+	});
+
+	describe("strends", () => {
+		it("should render a strends call", async () => {
+			expect(strends("?s", "?p")).toBe("strends(?s, ?p)");
+		});
+	});
+
+	describe("contains", () => {
+		it("should render a contains call", async () => {
+			expect(contains("?s", "?p")).toBe("contains(?s, ?p)");
+		});
+	});
+
+	describe("strbefore", () => {
+		it("should render a strbefore call", async () => {
+			expect(strbefore("?s", "?p")).toBe("strbefore(?s, ?p)");
+		});
+	});
+
+	describe("strafter", () => {
+		it("should render a strafter call", async () => {
+			expect(strafter("?s", "?p")).toBe("strafter(?s, ?p)");
+		});
+	});
+
+	describe("encodeForUri", () => {
+		it("should render an encode_for_uri call", async () => {
+			expect(encodeForUri("?s")).toBe("encode_for_uri(?s)");
+		});
+	});
+
+	describe("concat", () => {
+		it("should render a concat call over the joined arguments", async () => {
+			expect(concat("?a", "?b")).toBe("concat(?a, ?b)");
+		});
+		it("should render an empty concat call for no arguments", async () => {
+			expect(concat()).toBe("concat()");
+		});
+	});
+
+	describe("regex", () => {
+		it("should render a two-argument regex call when flags are omitted", async () => {
+			expect(regex("?s", "?p")).toBe("regex(?s, ?p)");
+		});
+		it("should render a three-argument regex call when flags are supplied", async () => {
+			expect(regex("?s", "?p", "?f")).toBe("regex(?s, ?p, ?f)");
+		});
+	});
+
+	describe("replace", () => {
+		it("should render a three-argument replace call when flags are omitted", async () => {
+			expect(replace("?s", "?p", "?r")).toBe("replace(?s, ?p, ?r)");
+		});
+		it("should render a four-argument replace call when flags are supplied", async () => {
+			expect(replace("?s", "?p", "?r", "?f")).toBe("replace(?s, ?p, ?r, ?f)");
+		});
+	});
+
+});
+
+describe("numeric functions", () => {
+
+	describe("abs", () => {
+		it("should render an abs call", async () => {
+			expect(abs("?n")).toBe("abs(?n)");
+		});
+	});
+
+	describe("round", () => {
+		it("should render a round call", async () => {
+			expect(round("?n")).toBe("round(?n)");
+		});
+	});
+
+	describe("ceil", () => {
+		it("should render a ceil call", async () => {
+			expect(ceil("?n")).toBe("ceil(?n)");
+		});
+	});
+
+	describe("floor", () => {
+		it("should render a floor call", async () => {
+			expect(floor("?n")).toBe("floor(?n)");
+		});
+	});
+
+	describe("rand", () => {
+		it("should render a nullary rand call", async () => {
+			expect(rand()).toBe("rand()");
+		});
+	});
+
+});
+
+describe("temporal functions", () => {
+
+	describe("now", () => {
+		it("should render a nullary now call", async () => {
+			expect(now()).toBe("now()");
+		});
+	});
+
+	describe("year", () => {
+		it("should render a year call", async () => {
+			expect(year("?d")).toBe("year(?d)");
+		});
+	});
+
+	describe("month", () => {
+		it("should render a month call", async () => {
+			expect(month("?d")).toBe("month(?d)");
+		});
+	});
+
+	describe("day", () => {
+		it("should render a day call", async () => {
+			expect(day("?d")).toBe("day(?d)");
+		});
+	});
+
+	describe("hours", () => {
+		it("should render an hours call", async () => {
+			expect(hours("?d")).toBe("hours(?d)");
+		});
+	});
+
+	describe("minutes", () => {
+		it("should render a minutes call", async () => {
+			expect(minutes("?d")).toBe("minutes(?d)");
+		});
+	});
+
+	describe("seconds", () => {
+		it("should render a seconds call", async () => {
+			expect(seconds("?d")).toBe("seconds(?d)");
+		});
+	});
+
+	describe("timezone", () => {
+		it("should render a timezone call", async () => {
+			expect(timezone("?d")).toBe("timezone(?d)");
+		});
+	});
+
+	describe("tz", () => {
+		it("should render a tz call", async () => {
+			expect(tz("?d")).toBe("tz(?d)");
+		});
+	});
+
+});
+
+describe("hash functions", () => {
+
+	describe("md5", () => {
+		it("should render an md5 call", async () => {
+			expect(md5("?s")).toBe("md5(?s)");
+		});
+	});
+
+	describe("sha1", () => {
+		it("should render a sha1 call", async () => {
+			expect(sha1("?s")).toBe("sha1(?s)");
+		});
+	});
+
+	describe("sha256", () => {
+		it("should render a sha256 call", async () => {
+			expect(sha256("?s")).toBe("sha256(?s)");
+		});
+	});
+
+	describe("sha384", () => {
+		it("should render a sha384 call", async () => {
+			expect(sha384("?s")).toBe("sha384(?s)");
+		});
+	});
+
+	describe("sha512", () => {
+		it("should render a sha512 call", async () => {
+			expect(sha512("?s")).toBe("sha512(?s)");
+		});
+	});
+
+});
+
+describe("isNotIn", () => {
+
+	it("should render a not-in membership test over the joined options", async () => {
+		expect(isNotIn("?x", ["?a", "?b"])).toBe("?x not in (?a, ?b)");
+	});
+
+	it("should render an empty not-in test for no options", async () => {
+		expect(isNotIn("?x", [])).toBe("?x not in ()");
 	});
 
 });

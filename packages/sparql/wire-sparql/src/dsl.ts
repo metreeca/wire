@@ -15,16 +15,17 @@
  */
 
 /**
- * DSL for SPARQL queries.
+ * DSL for SPARQL queries and updates.
  *
- * Provides composable combinators that assemble SPARQL query strings from typed fragments: graph patterns, property
- * paths, expressions, aggregates, solution modifiers, and the serialisers that render RDF {@link Term | terms} into
- * their SPARQL lexical forms. Every combinator takes and returns {@link SPARQL} fragments, so clauses nest by
- * ordinary function composition into a complete query.
+ * Provides composable combinators that assemble SPARQL request strings from typed fragments: update operations, graph
+ * patterns, property paths, expressions, aggregates, solution modifiers, and the serialisers that render RDF
+ * {@link Term | terms} into their SPARQL lexical forms. Every combinator takes and returns {@link SPARQL} fragments, so
+ * clauses nest by ordinary function composition into a complete query or update.
  *
  * @module
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/ SPARQL 1.1 Query Language}
+ * @see {@link https://www.w3.org/TR/sparql11-update/ SPARQL 1.1 Update}
  * @see {@link https://www.w3.org/TR/rdf11-concepts/ RDF 1.1 Concepts}
  * @see {@link https://www.w3.org/TR/n-triples/ RDF 1.1 N-Triples}
  */
@@ -56,7 +57,70 @@ import {
 const type: Reference = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 
 
-//// Queries ///////////////////////////////////////////////////////////////////////////////////////////////////////////
+//// Updates (Update §3) ///////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Combines SPARQL update operations into a single request.
+ *
+ * Joins the operations with `;`, the separator that sequences multiple operations in one request; they are applied in
+ * order against the graph store, as produced by {@link insert} and {@link deleet}.
+ *
+ * @param updates The update operations to sequence
+ *
+ * @returns The `;`-separated SPARQL update request
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-update/ SPARQL 1.1 Update}
+ */
+export function update(...updates: readonly SPARQL[]): SPARQL {
+	return updates.join("; ");
+}
+
+/**
+ * Generates a SPARQL `DELETE` update removing triples from the graph store.
+ *
+ * Without a `where` argument, produces a ground `delete data` operation removing the `content` triples verbatim. With a
+ * `where` argument, produces a `delete … where` operation removing, for each solution of the pattern, the triples the
+ * `content` template instantiates. Pass `content` as a single serialised block or a list of clauses joined into a
+ * fragment.
+ *
+ * @param content The triples to remove: ground triples for `delete data`, or a triple template for `delete … where`
+ * @param where The optional {@link where} clause selecting solutions to instantiate against; omit for a ground form
+ *
+ * @returns The SPARQL `DELETE` update
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-update/#deleteData SPARQL 1.1 Update — Delete Data}
+ * @see {@link https://www.w3.org/TR/sparql11-update/#deleteInsert SPARQL 1.1 Update — Delete/Insert}
+ */
+export function deleet(content: SPARQL | readonly SPARQL[], where?: SPARQL): SPARQL {
+	return where === undefined
+		? `delete data { ${isString(content) ? content : fragment(...content)} }`
+		: `delete { ${isString(content) ? content : fragment(...content)} } ${where}`;
+}
+
+/**
+ * Generates a SPARQL `INSERT` update adding triples to the graph store.
+ *
+ * Without a `where` argument, produces a ground `insert data` operation adding the `content` triples verbatim. With a
+ * `where` argument, produces an `insert … where` operation adding, for each solution of the pattern, the triples the
+ * `content` template instantiates. Pass `content` as a single serialised block or a list of clauses joined into a
+ * fragment.
+ *
+ * @param content The triples to add: ground triples for `insert data`, or a triple template for `insert … where`
+ * @param where The optional {@link where} clause selecting solutions to instantiate against; omit for a ground form
+ *
+ * @returns The SPARQL `INSERT` update
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-update/#insertData SPARQL 1.1 Update — Insert Data}
+ * @see {@link https://www.w3.org/TR/sparql11-update/#deleteInsert SPARQL 1.1 Update — Delete/Insert}
+ */
+export function insert(content: SPARQL | readonly SPARQL[], where?: SPARQL): SPARQL {
+	return where === undefined
+		? `insert data { ${isString(content) ? content : fragment(...content)} }`
+		: `insert { ${isString(content) ? content : fragment(...content)} } ${where}`;
+}
+
+
+//// Queries (§16) /////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Generates a SPARQL `ASK` query.
@@ -154,70 +218,7 @@ export function as(expression: SPARQL, variable: SPARQL): SPARQL {
 }
 
 
-//// Updates ///////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/**
- * Combines SPARQL update operations into a single request.
- *
- * Joins the operations with `;`, the separator that sequences multiple operations in one request; they are applied in
- * order against the graph store, as produced by {@link insert} and {@link deleet}.
- *
- * @param updates The update operations to sequence
- *
- * @returns The `;`-separated SPARQL update request
- *
- * @see {@link https://www.w3.org/TR/sparql11-update/ SPARQL 1.1 Update}
- */
-export function update(...updates: readonly SPARQL[]): SPARQL {
-	return updates.join("; ");
-}
-
-/**
- * Generates a SPARQL `DELETE` update removing triples from the graph store.
- *
- * Without a `where` argument, produces a ground `delete data` operation removing the `content` triples verbatim. With a
- * `where` argument, produces a `delete … where` operation removing, for each solution of the pattern, the triples the
- * `content` template instantiates. Pass `content` as a single serialised block or a list of clauses joined into a
- * fragment.
- *
- * @param content The triples to remove: ground triples for `delete data`, or a triple template for `delete … where`
- * @param where The optional {@link where} clause selecting solutions to instantiate against; omit for a ground form
- *
- * @returns The SPARQL `DELETE` update
- *
- * @see {@link https://www.w3.org/TR/sparql11-update/#deleteData SPARQL 1.1 Update — Delete Data}
- * @see {@link https://www.w3.org/TR/sparql11-update/#deleteInsert SPARQL 1.1 Update — Delete/Insert}
- */
-export function deleet(content: SPARQL | readonly SPARQL[], where?: SPARQL): SPARQL {
-	return where === undefined
-		? `delete data { ${isString(content) ? content : fragment(...content)} }`
-		: `delete { ${isString(content) ? content : fragment(...content)} } ${where}`;
-}
-
-/**
- * Generates a SPARQL `INSERT` update adding triples to the graph store.
- *
- * Without a `where` argument, produces a ground `insert data` operation adding the `content` triples verbatim. With a
- * `where` argument, produces an `insert … where` operation adding, for each solution of the pattern, the triples the
- * `content` template instantiates. Pass `content` as a single serialised block or a list of clauses joined into a
- * fragment.
- *
- * @param content The triples to add: ground triples for `insert data`, or a triple template for `insert … where`
- * @param where The optional {@link where} clause selecting solutions to instantiate against; omit for a ground form
- *
- * @returns The SPARQL `INSERT` update
- *
- * @see {@link https://www.w3.org/TR/sparql11-update/#insertData SPARQL 1.1 Update — Insert Data}
- * @see {@link https://www.w3.org/TR/sparql11-update/#deleteInsert SPARQL 1.1 Update — Delete/Insert}
- */
-export function insert(content: SPARQL | readonly SPARQL[], where?: SPARQL): SPARQL {
-	return where === undefined
-		? `insert data { ${isString(content) ? content : fragment(...content)} }`
-		: `insert { ${isString(content) ? content : fragment(...content)} } ${where}`;
-}
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//// Query Clauses (§15) ///////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Generates a SPARQL `WHERE` clause.
@@ -337,7 +338,7 @@ export function offset(start: number): SPARQL {
 }
 
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//// Graph Patterns (§8) ///////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Generates a SPARQL `UNION` pattern.
@@ -453,7 +454,7 @@ export function service(endpoint: SPARQL, ...clauses: readonly SPARQL[]): SPARQL
  * @see {@link https://www.w3.org/TR/sparql11-query/#inline-data SPARQL 1.1 Inline Data}
  */
 export function values(variables: readonly SPARQL[], rows: readonly (readonly SPARQL[])[]): SPARQL {
-	return `values (${variables.join(" ")}) { ${fragment(...rows.map(row => 
+	return `values (${variables.join(" ")}) { ${fragment(...rows.map(row =>
 		`(${row.join(" ")})`
 	))} }`;
 }
@@ -528,7 +529,7 @@ export function nil(): SPARQL {
 }
 
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//// Property Paths (§9) ///////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Generates a SPARQL sequence property path.
@@ -645,217 +646,7 @@ export function none(...predicates: readonly SPARQL[]): SPARQL {
 }
 
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/**
- * Generates a SPARQL `if()` conditional expression.
- *
- * Evaluates to `then` when `condition` holds and to `otherwise` when it fails. SPARQL keeps the
- * unselected branch lazy (§17.4.1.2), so a branch that would raise an evaluation error is left
- * unevaluated unless selected.
- *
- * @param condition The boolean test expression
- * @param then The expression selected when `condition` evaluates to `true`
- * @param otherwise The expression selected when `condition` evaluates to `false`
- *
- * @returns The `if(…)` conditional expression
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#func-if SPARQL 1.1 if}
- */
-export function iif(condition: SPARQL, then: SPARQL, otherwise: SPARQL): SPARQL {
-	return `if(${condition}, ${then}, ${otherwise})`;
-}
-
-/**
- * Generates a SPARQL `coalesce()` call returning the first argument that evaluates without error.
- *
- * Yields the value of the first listed expression that is bound and raises no evaluation error,
- * scanning left to right; the call is itself unbound only when every argument is. Used to supply a
- * fallback where an inner expression may be unbound or out of domain.
- *
- * @param expressions The candidate expressions, in priority order
- *
- * @returns The `coalesce(…)` call
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#func-coalesce SPARQL 1.1 coalesce}
- */
-export function coalesce(...expressions: readonly SPARQL[]): SPARQL {
-	return `coalesce(${expressions.join(", ")})`;
-}
-
-/**
- * Generates a SPARQL `str()` call rendering a term's lexical form as a plain literal.
- *
- * Drops the language tag or datatype of a literal and returns its lexical string; over an IRI it
- * returns the IRI string. A thin specialisation of {@link call}.
- *
- * @param expression The expression evaluating to the term to render
- *
- * @returns The `str()` call
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#func-str SPARQL 1.1 str}
- */
-export function str(expression: SPARQL): SPARQL {
-	return call("str", expression);
-}
-
-/**
- * Generates a SPARQL `datatype()` call extracting a literal's datatype IRI.
- *
- * Returns the datatype IRI of a typed literal, `xsd:string` for a plain literal, and `rdf:langString`
- * for a language-tagged one; raises on a non-literal term.
- *
- * @param expression The expression evaluating to the literal to inspect
- *
- * @returns The `datatype()` call
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#func-datatype SPARQL 1.1 datatype}
- */
-export function datatype(expression: SPARQL): SPARQL {
-	return `datatype(${expression})`;
-}
-
-/**
- * Generates a SPARQL `lang()` call extracting a literal's language tag.
- *
- * Returns the BCP 47 language tag of a language-tagged literal, or the empty string for a literal
- * carrying no tag.
- *
- * @param expression The expression evaluating to the literal to inspect
- *
- * @returns The `lang()` call
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#func-lang SPARQL 1.1 lang}
- */
-export function lang(expression: SPARQL): SPARQL {
-	return `lang(${expression})`;
-}
-
-/**
- * Generates a SPARQL function call from a function name and argument expressions.
- *
- * The generic primitive the named function builders ({@link str}, {@link datatype}, …) delegate to:
- * renders `fn(arg, …)` with the arguments comma-joined. The name is emitted verbatim, so the
- * caller upholds the lowercase generated-token convention.
- *
- * @param fn The SPARQL function name
- * @param args The argument expressions, in order
- *
- * @returns The `fn(…)` call
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#SparqlOps SPARQL 1.1 Function Library}
- */
-export function call(fn: Identifier, ...args: readonly SPARQL[]): SPARQL {
-	return `${fn}(${args.join(", ")})`;
-}
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/**
- * Generates a SPARQL `count()` aggregate.
- *
- * Counts the solutions in a group, or the bindings of `expression` when one is supplied. Wrap the argument in
- * {@link distinct} to count distinct values; omit it to count every solution as `count(*)`.
- *
- * @param expression The expression whose bindings are counted, or omitted to count all solutions
- *
- * @returns The `count(…)` aggregate
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#defn_aggCount SPARQL 1.1 Count}
- */
-export function count(expression?: SPARQL): SPARQL {
-	return `count(${expression ?? "*"})`;
-}
-
-/**
- * Generates a SPARQL `sum()` aggregate.
- *
- * @param expression The numeric expression to total over the group
- *
- * @returns The `sum(…)` aggregate
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#defn_aggSum SPARQL 1.1 Sum}
- */
-export function sum(expression: SPARQL): SPARQL {
-	return call("sum", expression);
-}
-
-/**
- * Generates a SPARQL `min()` aggregate.
- *
- * @param expression The expression to take the minimum of over the group
- *
- * @returns The `min(…)` aggregate
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#defn_aggMin SPARQL 1.1 Min}
- */
-export function min(expression: SPARQL): SPARQL {
-	return call("min", expression);
-}
-
-/**
- * Generates a SPARQL `max()` aggregate.
- *
- * @param expression The expression to take the maximum of over the group
- *
- * @returns The `max(…)` aggregate
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#defn_aggMax SPARQL 1.1 Max}
- */
-export function max(expression: SPARQL): SPARQL {
-	return call("max", expression);
-}
-
-/**
- * Generates a SPARQL `avg()` aggregate.
- *
- * @param expression The numeric expression to average over the group
- *
- * @returns The `avg(…)` aggregate
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#defn_aggAvg SPARQL 1.1 Avg}
- */
-export function avg(expression: SPARQL): SPARQL {
-	return call("avg", expression);
-}
-
-/**
- * Generates a SPARQL `sample()` aggregate.
- *
- * Returns an arbitrary value from the group's bindings of `expression`, used to carry a non-grouped column through an
- * aggregating query.
- *
- * @param expression The expression to sample a binding from over the group
- *
- * @returns The `sample(…)` aggregate
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#defn_aggSample SPARQL 1.1 Sample}
- */
-export function sample(expression: SPARQL): SPARQL {
-	return call("sample", expression);
-}
-
-/**
- * Generates a SPARQL `group_concat()` aggregate.
- *
- * Concatenates the group's string bindings of `expression`. With a `separator`, inserts it between values via the
- * `separator=` keyword argument; without one, SPARQL defaults to a single space.
- *
- * @param expression The expression whose string bindings are concatenated
- * @param separator The string inserted between values, or omitted for the default single space
- *
- * @returns The `group_concat(…)` aggregate
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#defn_aggGroupConcat SPARQL 1.1 GroupConcat}
- */
-export function groupConcat(expression: SPARQL, separator?: string): SPARQL {
-	return separator === undefined ? `group_concat(${expression})`
-		: `group_concat(${expression}; separator=${literal(separator)})`;
-}
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//// Logical Operators (§17.3) /////////////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Generates a SPARQL logical negation (`!`) of a boolean expression.
@@ -907,6 +698,8 @@ export function or(...conditions: readonly SPARQL[]): SPARQL {
 	return conditions.join(" || ");
 }
 
+
+//// Comparison Operators (§17.3) //////////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Generates a SPARQL equality (`=`) comparison.
@@ -993,6 +786,266 @@ export function lte(x: SPARQL, y: SPARQL): SPARQL {
 }
 
 
+//// Arithmetic Operators (§17.3) //////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Generates a SPARQL addition (`+`) of two numeric expressions.
+ *
+ * Parenthesises the operands so the sum binds as a unit regardless of the surrounding operator precedence.
+ *
+ * @param x The left operand expression
+ * @param y The right operand expression
+ *
+ * @returns The parenthesised `(… + …)` sum
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#OperatorMapping SPARQL 1.1 Operator Mapping}
+ */
+export function add(x: SPARQL, y: SPARQL): SPARQL {
+	return `(${x} + ${y})`;
+}
+
+/**
+ * Generates a SPARQL subtraction (`-`) of two numeric expressions.
+ *
+ * Parenthesises the operands so the difference binds as a unit regardless of the surrounding operator precedence.
+ *
+ * @param x The left operand expression
+ * @param y The right operand expression
+ *
+ * @returns The parenthesised `(… - …)` difference
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#OperatorMapping SPARQL 1.1 Operator Mapping}
+ */
+export function sub(x: SPARQL, y: SPARQL): SPARQL {
+	return `(${x} - ${y})`;
+}
+
+/**
+ * Generates a SPARQL multiplication (`*`) of two numeric expressions.
+ *
+ * Parenthesises the operands so the product binds as a unit regardless of the surrounding operator precedence.
+ *
+ * @param x The left operand expression
+ * @param y The right operand expression
+ *
+ * @returns The parenthesised `(… * …)` product
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#OperatorMapping SPARQL 1.1 Operator Mapping}
+ */
+export function mul(x: SPARQL, y: SPARQL): SPARQL {
+	return `(${x} * ${y})`;
+}
+
+/**
+ * Generates a SPARQL division (`/`) of two numeric expressions.
+ *
+ * Parenthesises the operands so the quotient binds as a unit regardless of the surrounding operator precedence.
+ *
+ * @param x The left operand (dividend) expression
+ * @param y The right operand (divisor) expression
+ *
+ * @returns The parenthesised `(… / …)` quotient
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#OperatorMapping SPARQL 1.1 Operator Mapping}
+ */
+export function div(x: SPARQL, y: SPARQL): SPARQL {
+	return `(${x} / ${y})`;
+}
+
+
+//// Functional Forms (§17.4.1) ////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Generates a SPARQL `if()` conditional expression.
+ *
+ * Evaluates to `then` when `condition` holds and to `otherwise` when it fails. SPARQL keeps the
+ * unselected branch lazy (§17.4.1.2), so a branch that would raise an evaluation error is left
+ * unevaluated unless selected.
+ *
+ * @param condition The boolean test expression
+ * @param then The expression selected when `condition` evaluates to `true`
+ * @param otherwise The expression selected when `condition` evaluates to `false`
+ *
+ * @returns The `if(…)` conditional expression
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-if SPARQL 1.1 if}
+ */
+export function iif(condition: SPARQL, then: SPARQL, otherwise: SPARQL): SPARQL {
+	return `if(${condition}, ${then}, ${otherwise})`;
+}
+
+/**
+ * Generates a SPARQL `coalesce()` call returning the first argument that evaluates without error.
+ *
+ * Yields the value of the first listed expression that is bound and raises no evaluation error,
+ * scanning left to right; the call is itself unbound only when every argument is. Used to supply a
+ * fallback where an inner expression may be unbound or out of domain.
+ *
+ * @param expressions The candidate expressions, in priority order
+ *
+ * @returns The `coalesce(…)` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-coalesce SPARQL 1.1 coalesce}
+ */
+export function coalesce(...expressions: readonly SPARQL[]): SPARQL {
+	return `coalesce(${expressions.join(", ")})`;
+}
+
+/**
+ * Generates a SPARQL `bound()` variable-binding test.
+ *
+ * Evaluates to `true` when the variable holds a value in the current solution: the test
+ * distinguishing a present value from an absent one, for example over the unmatched side of an
+ * {@link optional} pattern.
+ *
+ * @param expression The variable expression to test
+ *
+ * @returns The `bound()` test
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-bound SPARQL 1.1 bound}
+ */
+export function isBound(expression: SPARQL): SPARQL {
+	return `bound(${expression})`;
+}
+
+/**
+ * Generates a SPARQL set-membership (`IN`) test.
+ *
+ * Evaluates to `true` when the expression equals any listed option under value comparison. An empty
+ * option list renders `in ()`, which is always `false`, so callers that treat an empty set as
+ * unconstrained must guard the call.
+ *
+ * @param expression The expression to test
+ * @param options The candidate value expressions
+ *
+ * @returns The `… in (…)` membership test
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-in SPARQL 1.1 In}
+ */
+export function isIn(expression: SPARQL, options: readonly SPARQL[]): SPARQL {
+	return `${expression} in (${options.join(", ")})`;
+}
+
+/**
+ * Generates a SPARQL set-non-membership (`NOT IN`) test.
+ *
+ * The negation of {@link isIn}: evaluates to `true` when the expression equals none of the listed
+ * options under value comparison. An empty option list renders `not in ()`, which is always `true`,
+ * so callers that treat an empty set as unconstrained must guard the call.
+ *
+ * @param expression The expression to test
+ * @param options The candidate value expressions
+ *
+ * @returns The `… not in (…)` non-membership test
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-not-in SPARQL 1.1 Not In}
+ */
+export function isNotIn(expression: SPARQL, options: readonly SPARQL[]): SPARQL {
+	return `${expression} not in (${options.join(", ")})`;
+}
+
+/**
+ * Generates a SPARQL `exists` graph-pattern test.
+ *
+ * Evaluates to `true` when the wrapped pattern has at least one solution in the enclosing context,
+ * without binding any of its variables outward. The clauses are {@link fragment | space-joined} into
+ * a single group.
+ *
+ * @param patterns The graph pattern clauses to test for a match
+ *
+ * @returns The `exists { … }` test
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-filter-exists SPARQL 1.1 Filter Exists}
+ */
+export function exists(...patterns: readonly SPARQL[]): SPARQL {
+	return `exists { ${fragment(...patterns)} }`;
+}
+
+/**
+ * Generates a SPARQL `not exists` graph-pattern test.
+ *
+ * The negation of {@link exists}: evaluates to `true` when the wrapped pattern has no solution in the
+ * enclosing context. The clauses are {@link fragment | space-joined} into a single group.
+ *
+ * @param patterns The graph pattern clauses to test for absence
+ *
+ * @returns The `not exists { … }` test
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-filter-exists SPARQL 1.1 Filter Exists}
+ */
+export function nexists(...patterns: readonly SPARQL[]): SPARQL {
+	return `not exists { ${fragment(...patterns)} }`;
+}
+
+/**
+ * Generates a SPARQL function call from a function name and argument expressions.
+ *
+ * The generic escape hatch for SPARQL functions without a dedicated builder ({@link str},
+ * {@link datatype}, …): renders `fn(arg, …)` with the arguments comma-joined. The name is emitted
+ * verbatim, so the caller upholds the lowercase generated-token convention.
+ *
+ * @param fn The SPARQL function name
+ * @param args The argument expressions, in order
+ *
+ * @returns The `fn(…)` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#SparqlOps SPARQL 1.1 Function Library}
+ */
+export function call(fn: Identifier, ...args: readonly SPARQL[]): SPARQL {
+	return `${fn}(${args.join(", ")})`;
+}
+
+
+//// RDF Term Functions (§17.4.2) //////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Generates a SPARQL `str()` call rendering a term's lexical form as a plain literal.
+ *
+ * Drops the language tag or datatype of a literal and returns its lexical string; over an IRI it
+ * returns the IRI string.
+ *
+ * @param expression The expression evaluating to the term to render
+ *
+ * @returns The `str()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-str SPARQL 1.1 str}
+ */
+export function str(expression: SPARQL): SPARQL {
+	return `str(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `lang()` call extracting a literal's language tag.
+ *
+ * Returns the BCP 47 language tag of a language-tagged literal, or the empty string for a literal
+ * carrying no tag.
+ *
+ * @param expression The expression evaluating to the literal to inspect
+ *
+ * @returns The `lang()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-lang SPARQL 1.1 lang}
+ */
+export function lang(expression: SPARQL): SPARQL {
+	return `lang(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `datatype()` call extracting a literal's datatype IRI.
+ *
+ * Returns the datatype IRI of a typed literal, `xsd:string` for a plain literal, and `rdf:langString`
+ * for a language-tagged one; raises on a non-literal term.
+ *
+ * @param expression The expression evaluating to the literal to inspect
+ *
+ * @returns The `datatype()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-datatype SPARQL 1.1 datatype}
+ */
+export function datatype(expression: SPARQL): SPARQL {
+	return `datatype(${expression})`;
+}
+
 /**
  * Generates a SPARQL `isblank()` term-kind test.
  *
@@ -1076,38 +1129,261 @@ export function sameTerm(x: SPARQL, y: SPARQL): SPARQL {
 }
 
 /**
- * Generates a SPARQL set-membership (`IN`) test.
+ * Generates a SPARQL `iri()` call constructing an IRI from a string expression.
  *
- * Evaluates to `true` when the expression equals any listed option under value comparison. An empty
- * option list renders `in ()`, which is always `false`, so callers that treat an empty set as
- * unconstrained must guard the call.
+ * Resolves the argument's lexical form against the query base IRI where relative, returning an IRI term; over an IRI
+ * argument it returns the IRI unchanged.
  *
- * @param expression The expression to test
- * @param options The candidate value expressions
+ * @param expression The expression evaluating to the IRI string to construct
  *
- * @returns The `… in (…)` membership test
+ * @returns The `iri()` call
  *
- * @see {@link https://www.w3.org/TR/sparql11-query/#func-in SPARQL 1.1 In}
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-iri SPARQL 1.1 IRI}
  */
-export function isIn(expression: SPARQL, options: readonly SPARQL[]): SPARQL {
-	return `${expression} in (${options.join(", ")})`;
+export function iri(expression: SPARQL): SPARQL {
+	return `iri(${expression})`;
 }
 
 /**
- * Generates a SPARQL `bound()` variable-binding test.
+ * Generates a SPARQL `bnode()` call minting a blank node.
  *
- * Evaluates to `true` when the variable holds a value in the current solution: the test
- * distinguishing a present value from an absent one, for example over the unmatched side of an
- * {@link optional} pattern.
+ * Without an argument, mints a fresh blank node distinct on each call. With a string-valued `expression`, produces a
+ * blank node correlated to that string within the solution, so equal arguments yield the same node.
  *
- * @param expression The variable expression to test
+ * @param expression The expression correlating minted nodes within a solution, or omitted to mint a fresh node
  *
- * @returns The `bound()` test
+ * @returns The `bnode()` call
  *
- * @see {@link https://www.w3.org/TR/sparql11-query/#func-bound SPARQL 1.1 bound}
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-bnode SPARQL 1.1 BNODE}
  */
-export function isBound(expression: SPARQL): SPARQL {
-	return `bound(${expression})`;
+export function bnode(expression?: SPARQL): SPARQL {
+	return expression === undefined ? "bnode()" : `bnode(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `strdt()` call constructing a datatype-annotated literal.
+ *
+ * Pairs the lexical form of `expression` with the `datatype` IRI, producing a typed literal.
+ *
+ * @param expression The expression evaluating to the lexical form
+ * @param datatype The expression evaluating to the datatype IRI, typically a {@link reference}
+ *
+ * @returns The `strdt()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-strdt SPARQL 1.1 STRDT}
+ */
+export function strdt(expression: SPARQL, datatype: SPARQL): SPARQL {
+	return `strdt(${expression}, ${datatype})`;
+}
+
+/**
+ * Generates a SPARQL `strlang()` call constructing a language-tagged literal.
+ *
+ * Pairs the lexical form of `expression` with the `language` tag, producing a language-tagged string literal.
+ *
+ * @param expression The expression evaluating to the lexical form
+ * @param language The expression evaluating to the language tag, typically a {@link literal}
+ *
+ * @returns The `strlang()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-strlang SPARQL 1.1 STRLANG}
+ */
+export function strlang(expression: SPARQL, language: SPARQL): SPARQL {
+	return `strlang(${expression}, ${language})`;
+}
+
+/**
+ * Generates a SPARQL `uuid()` call minting a fresh UUID IRI.
+ *
+ * @returns The `uuid()` call, yielding a fresh `urn:uuid:` IRI on each evaluation
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-uuid SPARQL 1.1 UUID}
+ */
+export function uuid(): SPARQL {
+	return "uuid()";
+}
+
+/**
+ * Generates a SPARQL `struuid()` call minting a fresh UUID string.
+ *
+ * @returns The `struuid()` call, yielding a fresh UUID lexical form on each evaluation
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-struuid SPARQL 1.1 STRUUID}
+ */
+export function struuid(): SPARQL {
+	return "struuid()";
+}
+
+
+//// String Functions (§17.4.3) ////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Generates a SPARQL `strlen()` call returning a string's length.
+ *
+ * @param expression The expression evaluating to the string to measure
+ *
+ * @returns The `strlen()` call, yielding the length in characters
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-strlen SPARQL 1.1 STRLEN}
+ */
+export function strlen(expression: SPARQL): SPARQL {
+	return `strlen(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `substr()` call extracting a substring.
+ *
+ * Returns the substring of `source` starting at the 1-based `starting` position; with `length`, limits the result to
+ * that many characters, otherwise runs to the end.
+ *
+ * @param source The expression evaluating to the source string
+ * @param starting The expression evaluating to the 1-based start position
+ * @param length The expression evaluating to the maximum length, or omitted to run to the end
+ *
+ * @returns The `substr()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-substr SPARQL 1.1 SUBSTR}
+ */
+export function substr(source: SPARQL, starting: SPARQL, length?: SPARQL): SPARQL {
+	return length === undefined ? `substr(${source}, ${starting})` : `substr(${source}, ${starting}, ${length})`;
+}
+
+/**
+ * Generates a SPARQL `ucase()` call upper-casing a string.
+ *
+ * @param expression The expression evaluating to the string to upper-case
+ *
+ * @returns The `ucase()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-ucase SPARQL 1.1 UCASE}
+ */
+export function ucase(expression: SPARQL): SPARQL {
+	return `ucase(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `lcase()` call lower-casing a string.
+ *
+ * @param expression The expression evaluating to the string to lower-case
+ *
+ * @returns The `lcase()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-lcase SPARQL 1.1 LCASE}
+ */
+export function lcase(expression: SPARQL): SPARQL {
+	return `lcase(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `strstarts()` call testing a string prefix.
+ *
+ * Evaluates to `true` when `source` starts with `prefix`.
+ *
+ * @param source The expression evaluating to the string to test
+ * @param prefix The expression evaluating to the candidate prefix
+ *
+ * @returns The `strstarts()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-strstarts SPARQL 1.1 STRSTARTS}
+ */
+export function strstarts(source: SPARQL, prefix: SPARQL): SPARQL {
+	return `strstarts(${source}, ${prefix})`;
+}
+
+/**
+ * Generates a SPARQL `strends()` call testing a string suffix.
+ *
+ * Evaluates to `true` when `source` ends with `suffix`.
+ *
+ * @param source The expression evaluating to the string to test
+ * @param suffix The expression evaluating to the candidate suffix
+ *
+ * @returns The `strends()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-strends SPARQL 1.1 STRENDS}
+ */
+export function strends(source: SPARQL, suffix: SPARQL): SPARQL {
+	return `strends(${source}, ${suffix})`;
+}
+
+/**
+ * Generates a SPARQL `contains()` call testing for a substring.
+ *
+ * Evaluates to `true` when `source` contains `substring`.
+ *
+ * @param source The expression evaluating to the string to search
+ * @param substring The expression evaluating to the substring to find
+ *
+ * @returns The `contains()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-contains SPARQL 1.1 CONTAINS}
+ */
+export function contains(source: SPARQL, substring: SPARQL): SPARQL {
+	return `contains(${source}, ${substring})`;
+}
+
+/**
+ * Generates a SPARQL `strbefore()` call returning the portion before a substring.
+ *
+ * Returns the portion of `source` preceding the first occurrence of `substring`, or the empty string when `substring`
+ * is absent.
+ *
+ * @param source The expression evaluating to the source string
+ * @param substring The expression evaluating to the delimiting substring
+ *
+ * @returns The `strbefore()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-strbefore SPARQL 1.1 STRBEFORE}
+ */
+export function strbefore(source: SPARQL, substring: SPARQL): SPARQL {
+	return `strbefore(${source}, ${substring})`;
+}
+
+/**
+ * Generates a SPARQL `strafter()` call returning the portion after a substring.
+ *
+ * Returns the portion of `source` following the first occurrence of `substring`, or the empty string when `substring`
+ * is absent.
+ *
+ * @param source The expression evaluating to the source string
+ * @param substring The expression evaluating to the delimiting substring
+ *
+ * @returns The `strafter()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-strafter SPARQL 1.1 STRAFTER}
+ */
+export function strafter(source: SPARQL, substring: SPARQL): SPARQL {
+	return `strafter(${source}, ${substring})`;
+}
+
+/**
+ * Generates a SPARQL `encode_for_uri()` call percent-encoding a string.
+ *
+ * Percent-encodes `expression` for safe inclusion in a URI path segment.
+ *
+ * @param expression The expression evaluating to the string to encode
+ *
+ * @returns The `encode_for_uri()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-encode SPARQL 1.1 ENCODE_FOR_URI}
+ */
+export function encodeForUri(expression: SPARQL): SPARQL {
+	return `encode_for_uri(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `concat()` call joining string expressions.
+ *
+ * Concatenates the arguments left to right into a single string.
+ *
+ * @param expressions The expressions evaluating to the strings to join, in order
+ *
+ * @returns The `concat()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-concat SPARQL 1.1 CONCAT}
+ */
+export function concat(...expressions: readonly SPARQL[]): SPARQL {
+	return `concat(${expressions.join(", ")})`;
 }
 
 /**
@@ -1128,42 +1404,411 @@ export function langMatches(expression: SPARQL, range: TagRange): SPARQL {
 	return `langmatches(${expression}, ${literal(range)})`;
 }
 
-
 /**
- * Generates a SPARQL `exists` graph-pattern test.
+ * Generates a SPARQL `regex()` call testing a string against a pattern.
  *
- * Evaluates to `true` when the wrapped pattern has at least one solution in the enclosing context,
- * without binding any of its variables outward. The clauses are {@link fragment | space-joined} into
- * a single group.
+ * Evaluates to `true` when `text` matches the regular expression `pattern`; with `flags`, applies the match modifiers,
+ * such as `"i"` for case-insensitivity.
  *
- * @param patterns The graph pattern clauses to test for a match
+ * @param text The expression evaluating to the string to test
+ * @param pattern The expression evaluating to the regular-expression pattern, typically a {@link literal}
+ * @param flags The expression evaluating to the match flags, or omitted for none
  *
- * @returns The `exists { … }` test
+ * @returns The `regex()` call
  *
- * @see {@link https://www.w3.org/TR/sparql11-query/#func-filter-exists SPARQL 1.1 Filter Exists}
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-regex SPARQL 1.1 REGEX}
  */
-export function exists(...patterns: readonly SPARQL[]): SPARQL {
-	return `exists { ${fragment(...patterns)} }`;
+export function regex(text: SPARQL, pattern: SPARQL, flags?: SPARQL): SPARQL {
+	return flags === undefined ? `regex(${text}, ${pattern})` : `regex(${text}, ${pattern}, ${flags})`;
 }
 
 /**
- * Generates a SPARQL `not exists` graph-pattern test.
+ * Generates a SPARQL `replace()` call substituting pattern matches.
  *
- * The negation of {@link exists}: evaluates to `true` when the wrapped pattern has no solution in the
- * enclosing context. The clauses are {@link fragment | space-joined} into a single group.
+ * Replaces each match of the regular expression `pattern` in `text` with `replacement`; with `flags`, applies the match
+ * modifiers, such as `"i"` for case-insensitivity.
  *
- * @param patterns The graph pattern clauses to test for absence
+ * @param text The expression evaluating to the string to transform
+ * @param pattern The expression evaluating to the regular-expression pattern, typically a {@link literal}
+ * @param replacement The expression evaluating to the replacement template
+ * @param flags The expression evaluating to the match flags, or omitted for none
  *
- * @returns The `not exists { … }` test
+ * @returns The `replace()` call
  *
- * @see {@link https://www.w3.org/TR/sparql11-query/#func-filter-exists SPARQL 1.1 Filter Exists}
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-replace SPARQL 1.1 REPLACE}
  */
-export function nexists(...patterns: readonly SPARQL[]): SPARQL {
-	return `not exists { ${fragment(...patterns)} }`;
+export function replace(text: SPARQL, pattern: SPARQL, replacement: SPARQL, flags?: SPARQL): SPARQL {
+	return flags === undefined
+		? `replace(${text}, ${pattern}, ${replacement})`
+		: `replace(${text}, ${pattern}, ${replacement}, ${flags})`;
 }
 
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//// Numeric Functions (§17.4.4) ///////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Generates a SPARQL `abs()` call returning a number's absolute value.
+ *
+ * @param expression The expression evaluating to the number
+ *
+ * @returns The `abs()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-abs SPARQL 1.1 abs}
+ */
+export function abs(expression: SPARQL): SPARQL {
+	return `abs(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `round()` call rounding a number to the nearest integer.
+ *
+ * @param expression The expression evaluating to the number
+ *
+ * @returns The `round()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-round SPARQL 1.1 round}
+ */
+export function round(expression: SPARQL): SPARQL {
+	return `round(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `ceil()` call rounding a number up to an integer.
+ *
+ * @param expression The expression evaluating to the number
+ *
+ * @returns The `ceil()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-ceil SPARQL 1.1 ceil}
+ */
+export function ceil(expression: SPARQL): SPARQL {
+	return `ceil(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `floor()` call rounding a number down to an integer.
+ *
+ * @param expression The expression evaluating to the number
+ *
+ * @returns The `floor()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-floor SPARQL 1.1 floor}
+ */
+export function floor(expression: SPARQL): SPARQL {
+	return `floor(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `rand()` call returning a random number.
+ *
+ * @returns The `rand()` call, yielding a fresh double in `[0, 1)` on each evaluation
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-rand SPARQL 1.1 RAND}
+ */
+export function rand(): SPARQL {
+	return "rand()";
+}
+
+
+//// Temporal Functions (§17.4.5) //////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Generates a SPARQL `now()` call returning the query execution timestamp.
+ *
+ * @returns The `now()` call, yielding the `xsd:dateTime` fixed for the query execution
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-now SPARQL 1.1 now}
+ */
+export function now(): SPARQL {
+	return "now()";
+}
+
+/**
+ * Generates a SPARQL `year()` call extracting a dateTime's year.
+ *
+ * @param expression The expression evaluating to the `xsd:dateTime`
+ *
+ * @returns The `year()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-year SPARQL 1.1 year}
+ */
+export function year(expression: SPARQL): SPARQL {
+	return `year(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `month()` call extracting a dateTime's month.
+ *
+ * @param expression The expression evaluating to the `xsd:dateTime`
+ *
+ * @returns The `month()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-month SPARQL 1.1 month}
+ */
+export function month(expression: SPARQL): SPARQL {
+	return `month(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `day()` call extracting a dateTime's day.
+ *
+ * @param expression The expression evaluating to the `xsd:dateTime`
+ *
+ * @returns The `day()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-day SPARQL 1.1 day}
+ */
+export function day(expression: SPARQL): SPARQL {
+	return `day(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `hours()` call extracting a dateTime's hours.
+ *
+ * @param expression The expression evaluating to the `xsd:dateTime`
+ *
+ * @returns The `hours()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-hours SPARQL 1.1 hours}
+ */
+export function hours(expression: SPARQL): SPARQL {
+	return `hours(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `minutes()` call extracting a dateTime's minutes.
+ *
+ * @param expression The expression evaluating to the `xsd:dateTime`
+ *
+ * @returns The `minutes()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-minutes SPARQL 1.1 minutes}
+ */
+export function minutes(expression: SPARQL): SPARQL {
+	return `minutes(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `seconds()` call extracting a dateTime's seconds.
+ *
+ * @param expression The expression evaluating to the `xsd:dateTime`
+ *
+ * @returns The `seconds()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-seconds SPARQL 1.1 seconds}
+ */
+export function seconds(expression: SPARQL): SPARQL {
+	return `seconds(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `timezone()` call extracting a dateTime's timezone as a duration.
+ *
+ * Returns the timezone offset as an `xsd:dayTimeDuration`, raising when the argument carries no timezone; the
+ * string-valued {@link tz} variant returns the empty string instead.
+ *
+ * @param expression The expression evaluating to the `xsd:dateTime`
+ *
+ * @returns The `timezone()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-timezone SPARQL 1.1 timezone}
+ */
+export function timezone(expression: SPARQL): SPARQL {
+	return `timezone(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `tz()` call extracting a dateTime's timezone as a string.
+ *
+ * Returns the timezone offset as a string, or the empty string when the argument carries no timezone; the
+ * duration-valued {@link timezone} variant raises instead.
+ *
+ * @param expression The expression evaluating to the `xsd:dateTime`
+ *
+ * @returns The `tz()` call
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-tz SPARQL 1.1 tz}
+ */
+export function tz(expression: SPARQL): SPARQL {
+	return `tz(${expression})`;
+}
+
+
+//// Hash Functions (§17.4.6) //////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Generates a SPARQL `md5()` call returning a string's MD5 digest.
+ *
+ * @param expression The expression evaluating to the string to digest
+ *
+ * @returns The `md5()` call, yielding the digest as a hex string
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-md5 SPARQL 1.1 MD5}
+ */
+export function md5(expression: SPARQL): SPARQL {
+	return `md5(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `sha1()` call returning a string's SHA-1 digest.
+ *
+ * @param expression The expression evaluating to the string to digest
+ *
+ * @returns The `sha1()` call, yielding the digest as a hex string
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-sha1 SPARQL 1.1 SHA1}
+ */
+export function sha1(expression: SPARQL): SPARQL {
+	return `sha1(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `sha256()` call returning a string's SHA-256 digest.
+ *
+ * @param expression The expression evaluating to the string to digest
+ *
+ * @returns The `sha256()` call, yielding the digest as a hex string
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-sha256 SPARQL 1.1 SHA256}
+ */
+export function sha256(expression: SPARQL): SPARQL {
+	return `sha256(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `sha384()` call returning a string's SHA-384 digest.
+ *
+ * @param expression The expression evaluating to the string to digest
+ *
+ * @returns The `sha384()` call, yielding the digest as a hex string
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-sha384 SPARQL 1.1 SHA384}
+ */
+export function sha384(expression: SPARQL): SPARQL {
+	return `sha384(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `sha512()` call returning a string's SHA-512 digest.
+ *
+ * @param expression The expression evaluating to the string to digest
+ *
+ * @returns The `sha512()` call, yielding the digest as a hex string
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#func-sha512 SPARQL 1.1 SHA512}
+ */
+export function sha512(expression: SPARQL): SPARQL {
+	return `sha512(${expression})`;
+}
+
+
+//// Aggregates (§18.5.1) //////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Generates a SPARQL `count()` aggregate.
+ *
+ * Counts the solutions in a group, or the bindings of `expression` when one is supplied. Wrap the argument in
+ * {@link distinct} to count distinct values; omit it to count every solution as `count(*)`.
+ *
+ * @param expression The expression whose bindings are counted, or omitted to count all solutions
+ *
+ * @returns The `count(…)` aggregate
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#defn_aggCount SPARQL 1.1 Count}
+ */
+export function count(expression?: SPARQL): SPARQL {
+	return `count(${expression ?? "*"})`;
+}
+
+/**
+ * Generates a SPARQL `sum()` aggregate.
+ *
+ * @param expression The numeric expression to total over the group
+ *
+ * @returns The `sum(…)` aggregate
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#defn_aggSum SPARQL 1.1 Sum}
+ */
+export function sum(expression: SPARQL): SPARQL {
+	return `sum(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `min()` aggregate.
+ *
+ * @param expression The expression to take the minimum of over the group
+ *
+ * @returns The `min(…)` aggregate
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#defn_aggMin SPARQL 1.1 Min}
+ */
+export function min(expression: SPARQL): SPARQL {
+	return `min(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `max()` aggregate.
+ *
+ * @param expression The expression to take the maximum of over the group
+ *
+ * @returns The `max(…)` aggregate
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#defn_aggMax SPARQL 1.1 Max}
+ */
+export function max(expression: SPARQL): SPARQL {
+	return `max(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `avg()` aggregate.
+ *
+ * @param expression The numeric expression to average over the group
+ *
+ * @returns The `avg(…)` aggregate
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#defn_aggAvg SPARQL 1.1 Avg}
+ */
+export function avg(expression: SPARQL): SPARQL {
+	return `avg(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `sample()` aggregate.
+ *
+ * Returns an arbitrary value from the group's bindings of `expression`, used to carry a non-grouped column through an
+ * aggregating query.
+ *
+ * @param expression The expression to sample a binding from over the group
+ *
+ * @returns The `sample(…)` aggregate
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#defn_aggSample SPARQL 1.1 Sample}
+ */
+export function sample(expression: SPARQL): SPARQL {
+	return `sample(${expression})`;
+}
+
+/**
+ * Generates a SPARQL `group_concat()` aggregate.
+ *
+ * Concatenates the group's string bindings of `expression`. With a `separator`, inserts it between values via the
+ * `separator=` keyword argument; without one, SPARQL defaults to a single space.
+ *
+ * @param expression The expression whose string bindings are concatenated
+ * @param separator The string inserted between values, or omitted for the default single space
+ *
+ * @returns The `group_concat(…)` aggregate
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#defn_aggGroupConcat SPARQL 1.1 GroupConcat}
+ */
+export function groupConcat(expression: SPARQL, separator?: string): SPARQL {
+	return separator === undefined
+		? `group_concat(${expression})`
+		: `group_concat(${expression}; separator=${literal(separator)})`;
+}
+
+
+//// Serialisers (§4) //////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Generates SPARQL triple data from a {@link Triple} sequence.
