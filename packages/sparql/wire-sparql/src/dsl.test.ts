@@ -24,6 +24,7 @@ import {
 	anchor,
 	blank,
 	bnode,
+	boolean,
 	call,
 	ceil,
 	coalesce,
@@ -55,6 +56,7 @@ import {
 	nil,
 	none,
 	now,
+	number,
 	offset,
 	optional,
 	or,
@@ -78,6 +80,7 @@ import {
 	strlang,
 	strlen,
 	strstarts,
+	string,
 	struuid,
 	sub,
 	substr,
@@ -227,6 +230,70 @@ describe("terms", () => {
 		it("should escape text in typed literal", async () => {
 			expect(typed("a\\b", "http://www.w3.org/2001/XMLSchema#integer"))
 				.toBe("\"a\\\\b\"^^<http://www.w3.org/2001/XMLSchema#integer>");
+		});
+
+	});
+
+	describe("boolean", () => {
+
+		it("should render true as the SPARQL keyword", async () => {
+			expect(boolean(true)).toBe("true");
+		});
+
+		it("should render false as the SPARQL keyword", async () => {
+			expect(boolean(false)).toBe("false");
+		});
+
+	});
+
+	describe("number", () => {
+
+		it("should render an integer as a bare xsd:integer literal", async () => {
+			expect(number(42)).toBe("42");
+		});
+
+		it("should render a negative integer", async () => {
+			expect(number(-42)).toBe("-42");
+		});
+
+		it("should render zero", async () => {
+			expect(number(0)).toBe("0");
+		});
+
+		it("should render a non-integer as a bare xsd:decimal literal", async () => {
+			expect(number(4.2)).toBe("4.2");
+		});
+
+		it("should render a small magnitude as a bare xsd:double literal", async () => {
+			expect(number(0.0000001)).toBe("1e-7");
+		});
+
+		it("should render positive infinity as a typed xsd:double literal", async () => {
+			expect(number(Infinity)).toBe("\"INF\"^^<http://www.w3.org/2001/XMLSchema#double>");
+		});
+
+		it("should render negative infinity as a typed xsd:double literal", async () => {
+			expect(number(-Infinity)).toBe("\"-INF\"^^<http://www.w3.org/2001/XMLSchema#double>");
+		});
+
+		it("should render NaN as a typed xsd:double literal", async () => {
+			expect(number(NaN)).toBe("\"NaN\"^^<http://www.w3.org/2001/XMLSchema#double>");
+		});
+
+	});
+
+	describe("string", () => {
+
+		it("should render a simple literal in double quotes", async () => {
+			expect(string("hello")).toBe("\"hello\"");
+		});
+
+		it("should escape text in the simple literal", async () => {
+			expect(string("a\\b")).toBe("\"a\\\\b\"");
+		});
+
+		it("should handle empty string", async () => {
+			expect(string("")).toBe("\"\"");
 		});
 
 	});

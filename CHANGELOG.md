@@ -21,6 +21,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `strends`, `contains`, `strbefore`, `strafter`, `encodeForUri`, `concat`, `regex`, `replace`), numeric functions
   (`abs`, `round`, `ceil`, `floor`, `rand`), temporal functions (`now`, `year`, `month`, `day`, `hours`, `minutes`,
   `seconds`, `timezone`, `tz`), and hash functions (`md5`, `sha1`, `sha256`, `sha384`, `sha512`)
+- `@metreeca/wire-sparql` — `./dsl` scalar term serialisers `boolean`, `number`, and `string`, rendering JavaScript
+  scalar values into their most compact SPARQL literal forms
 
 ### Changed
 

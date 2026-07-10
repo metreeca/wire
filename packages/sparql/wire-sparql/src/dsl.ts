@@ -1980,6 +1980,7 @@ export function variable(variable: Variable): SPARQL {
 	return variable;
 }
 
+
 /**
  * Generates the SPARQL representation of a {@link Term}.
  *
@@ -2037,6 +2038,57 @@ export function reference(reference?: Reference): SPARQL {
 }
 
 /**
+ * Generates the SPARQL representation of a boolean value.
+ *
+ * Emits the SPARQL boolean keyword `true` or `false`, the shorthand syntax for an `xsd:boolean` literal, rather than
+ * the verbose `"true"^^xsd:boolean` typed form.
+ *
+ * @param value The boolean value to render
+ *
+ * @returns The generated boolean literal, either `true` or `false`
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#QSynLiterals SPARQL 1.1 RDF Term Syntax}
+ */
+export function boolean(value: boolean): SPARQL {
+	return value ? "true" : "false";
+}
+
+/**
+ * Generates the SPARQL representation of a numeric value.
+ *
+ * Emits a bare numeric literal, the most compact typed form: an integer renders as an `xsd:integer` (for example
+ * `42`), a finite non-integer as an `xsd:decimal` where representable without an exponent (for example `4.2`) and as
+ * an `xsd:double` otherwise (for example `1e-7`). A non-finite value has no native SPARQL syntax and renders as an
+ * explicitly typed `xsd:double` literal, using the lexical forms `INF`, `-INF` and `NaN`.
+ *
+ * @param value The numeric value to render
+ *
+ * @returns The generated numeric literal
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#QSynLiterals SPARQL 1.1 RDF Term Syntax}
+ */
+export function number(value: number): SPARQL {
+	return Number.isFinite(value) ? String(value)
+		: typed(Number.isNaN(value) ? "NaN" : value > 0 ? "INF" : "-INF", xsd.double);
+}
+
+/**
+ * Generates the SPARQL representation of a string value.
+ *
+ * Emits a simple literal in double quotes, escaping the content according to the N-Triples STRING_LITERAL_QUOTE
+ * production; equivalent to {@link literal} called without a datatype.
+ *
+ * @param value The string value to render
+ *
+ * @returns The generated simple literal
+ *
+ * @see {@link https://www.w3.org/TR/n-triples/#grammar-production-STRING_LITERAL_QUOTE N-Triples STRING_LITERAL_QUOTE}
+ */
+export function string(value: string): SPARQL {
+	return `"${escapeString(value)}"`;
+}
+
+/**
  * Generates the SPARQL representation of a literal value.
  *
  * Without a `type` (or with the redundant `xsd:string` datatype), produces a simple literal in double quotes. With a
@@ -2048,6 +2100,9 @@ export function reference(reference?: Reference): SPARQL {
  *
  * @returns The generated literal
  *
+ * @see {@link boolean}
+ * @see {@link number}
+ * @see {@link string}
  * @see {@link https://www.w3.org/TR/n-triples/#grammar-production-STRING_LITERAL_QUOTE N-Triples STRING_LITERAL_QUOTE}
  */
 export function literal(text: string, type?: Tag | Reference): SPARQL {
