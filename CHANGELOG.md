@@ -29,6 +29,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `@metreeca/wire-sparql` — renamed the `./dsl` `alias` projection combinator to `as`
 - `@metreeca/wire-sparql` — `./dsl` variadic combinators now drop empty operands (such as those produced by `nil`)
   before joining, so optional operands left out introduce no redundant separators
+- `@metreeca/wire-sparql` — `./dsl` group and block pattern combinators (`where`, `group`, `optional`, `minus`,
+  `graph`, `service`, `exists`, `nexists`) and the `groupBy`, `orderBy`, and `having` clause modifiers now drop empty
+  clauses and yield the empty fragment when none survive; `limit` and `offset` yield the empty fragment for a count of
+  `0`, and `having` accepts a list of conditions bracketed and conjoined with `&&`
 
 ### Removed
 

@@ -227,23 +227,28 @@ export function as(expression: SPARQL, variable: SPARQL): SPARQL {
  * Generates a SPARQL `WHERE` clause.
  *
  * Wraps the space-joined clauses in a `where { … }` block: the graph pattern a {@link select} or {@link ask} query
- * matches against, and the source a {@link deleet} or {@link insert} update draws its solutions from.
+ * matches against, and the source a {@link deleet} or {@link insert} update draws its solutions from. Empty clauses,
+ * such as those produced by {@link nil}, are dropped first; when none survives, the result is the empty fragment via
+ * {@link nil}, which callers must guard against where a body is required.
  *
  * @param clauses The graph pattern clauses forming the query body
  *
- * @returns The SPARQL `WHERE` clause
+ * @returns The SPARQL `WHERE` clause, or the empty fragment for no clauses
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#WritingSimpleQueries SPARQL 1.1 Writing Simple Queries}
  */
 export function where(...clauses: readonly SPARQL[]): SPARQL {
-	return `where { ${fragment(...clauses)} }`;
+	return map(clauses.filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil() : `where { ${fragment(...clauses)} }`
+	);
 }
 
 /**
  * Generates a SPARQL `GROUP BY` clause.
  *
- * Prefixes the space-joined grouping expressions with `group by`, partitioning solutions for aggregation. An empty list
- * yields the empty fragment, leaving the solutions ungrouped.
+ * Prefixes the space-joined grouping expressions with `group by`, partitioning solutions for aggregation. Empty
+ * expressions, such as those produced by {@link nil}, are dropped first; an empty list yields the empty fragment,
+ * leaving the solutions ungrouped.
  *
  * @param expressions The grouping expressions
  *
@@ -252,31 +257,39 @@ export function where(...clauses: readonly SPARQL[]): SPARQL {
  * @see {@link https://www.w3.org/TR/sparql11-query/#aggregates SPARQL 1.1 Aggregates}
  */
 export function groupBy(...expressions: readonly SPARQL[]): SPARQL {
-	return expressions.length === 0 ? nil() : `group by ${fragment(...expressions)}`;
+	return map(expressions.filter(expression => expression !== ""), expressions =>
+		expressions.length === 0 ? nil() : `group by ${fragment(...expressions)}`
+	);
 }
 
 /**
- * Generates a SPARQL `HAVING` constraint.
+ * Generates a SPARQL `HAVING` clause.
  *
- * Wraps the constraint in a `having(…)` clause, filtering grouped solutions by an aggregate condition the way
- * {@link filter} constrains ungrouped ones. Conjoin conditions with {@link and} to constrain on more than one.
+ * Wraps the conditions in a `having (…)` clause, filtering grouped solutions by aggregate conditions the way
+ * {@link filter} constrains ungrouped ones; several conditions are each bracketed and conjoined with `&&`, the form
+ * portable across engines. Empty conditions, such as those produced by {@link nil}, are dropped first; an empty list
+ * yields the empty fragment, leaving the grouped solutions unfiltered.
  *
- * @param constraint The boolean constraint expression over the grouped solutions
+ * @param conditions The boolean constraint expressions over the grouped solutions
  *
- * @returns The SPARQL `HAVING` constraint
+ * @returns The SPARQL `HAVING` clause, or the empty fragment for no conditions
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#aggregates SPARQL 1.1 Aggregates}
  */
-export function having(constraint: SPARQL): SPARQL {
-	return `having(${constraint})`;
+export function having(conditions: readonly SPARQL[]): SPARQL {
+	return map(conditions.filter(constraint => constraint !== ""), conditions =>
+		conditions.length === 0 ? nil()
+			: conditions.length === 1 ? `having (${conditions[0]})`
+				: `having (${and(...conditions.map(condition => `(${condition})`))})`
+	);
 }
 
 /**
  * Generates a SPARQL `ORDER BY` clause.
  *
  * Prefixes the space-joined order conditions with `order by`. Each condition is a bare expression for ascending order
- * or an {@link asc} or {@link desc} wrapper. An empty list yields the empty fragment, leaving the solution sequence
- * unordered.
+ * or an {@link asc} or {@link desc} wrapper. Empty conditions, such as those produced by {@link nil}, are dropped
+ * first; an empty list yields the empty fragment, leaving the solution sequence unordered.
  *
  * @param conditions The order conditions, in priority order
  *
@@ -285,7 +298,9 @@ export function having(constraint: SPARQL): SPARQL {
  * @see {@link https://www.w3.org/TR/sparql11-query/#modOrderBy SPARQL 1.1 Order By}
  */
 export function orderBy(...conditions: readonly SPARQL[]): SPARQL {
-	return conditions.length === 0 ? nil() : `order by ${fragment(...conditions)}`;
+	return map(conditions.filter(condition => condition !== ""), conditions =>
+		conditions.length === 0 ? nil() : `order by ${fragment(...conditions)}`
+	);
 }
 
 /**
@@ -317,27 +332,31 @@ export function desc(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `LIMIT` clause.
  *
- * @param count The maximum number of solutions to return
+ * A `value` of `0` yields the empty fragment, leaving the number of solutions unbounded.
  *
- * @returns The SPARQL `LIMIT` clause
+ * @param value The maximum number of solutions to return
+ *
+ * @returns The SPARQL `LIMIT` clause, or the empty fragment for a `value` of `0`
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#modResultLimit SPARQL 1.1 Limit}
  */
-export function limit(count: number): SPARQL {
-	return `limit ${count}`;
+export function limit(value: number): SPARQL {
+	return value === 0 ? nil() : `limit ${value}`;
 }
 
 /**
  * Generates a SPARQL `OFFSET` clause.
  *
- * @param start The number of leading solutions to skip
+ * A `value` of `0` yields the empty fragment, skipping no leading solutions.
  *
- * @returns The SPARQL `OFFSET` clause
+ * @param value The number of leading solutions to skip
+ *
+ * @returns The SPARQL `OFFSET` clause, or the empty fragment for a `value` of `0`
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#modOffset SPARQL 1.1 Offset}
  */
-export function offset(start: number): SPARQL {
-	return `offset ${start}`;
+export function offset(value: number): SPARQL {
+	return value === 0 ? nil() : `offset ${value}`;
 }
 
 
@@ -367,81 +386,99 @@ export function union(...clauses: readonly SPARQL[]): SPARQL {
 /**
  * Generates a SPARQL `OPTIONAL` group pattern.
  *
- * Wraps the clauses in an `optional` group; an empty list yields an empty `optional { }` group, which callers must
- * guard against where a matching pattern is required.
+ * Wraps the clauses in an `optional` group. Empty clauses, such as those produced by {@link nil}, are dropped first;
+ * when none survives, the result is the empty fragment via {@link nil}, which callers must guard against where a
+ * matching pattern is required.
  *
  * @param clauses The graph pattern clauses to wrap
  *
- * @returns The SPARQL `OPTIONAL` group pattern
+ * @returns The SPARQL `OPTIONAL` group pattern, or the empty fragment for no clauses
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#optionals SPARQL 1.1 Optional Patterns}
  */
 export function optional(...clauses: readonly SPARQL[]): SPARQL {
-	return `optional { ${fragment(...clauses)} }`;
+	return map(clauses.filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil() : `optional { ${fragment(...clauses)} }`
+	);
 }
 
 /**
  * Generates a SPARQL group graph pattern.
  *
+ * Empty clauses, such as those produced by {@link nil}, are dropped first; when none survives, the result is the empty
+ * fragment via {@link nil}, which callers must guard against where a pattern is required.
+ *
  * @param clauses The graph pattern clauses to wrap
  *
- * @returns The braced SPARQL group pattern
+ * @returns The braced SPARQL group pattern, or the empty fragment for no clauses
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#GroupPatterns SPARQL 1.1 Group Graph Patterns}
  */
 export function group(...clauses: readonly SPARQL[]): SPARQL {
-	return `{ ${fragment(...clauses)} }`;
+	return map(clauses.filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil() : `{ ${fragment(...clauses)} }`
+	);
 }
 
 /**
  * Generates a SPARQL `MINUS` pattern.
  *
  * Wraps the clauses in a `minus` group, removing from the enclosing group every solution compatible with the wrapped
- * pattern. An empty list yields an empty `minus { }` group, which callers must guard against where a pattern is
- * required.
+ * pattern. Empty clauses, such as those produced by {@link nil}, are dropped first; when none survives, the result is
+ * the empty fragment via {@link nil}, which callers must guard against where a pattern is required.
  *
  * @param clauses The graph pattern clauses to subtract
  *
- * @returns The SPARQL `MINUS` pattern
+ * @returns The SPARQL `MINUS` pattern, or the empty fragment for no clauses
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#negation SPARQL 1.1 Negation}
  */
 export function minus(...clauses: readonly SPARQL[]): SPARQL {
-	return `minus { ${fragment(...clauses)} }`;
+	return map(clauses.filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil() : `minus { ${fragment(...clauses)} }`
+	);
 }
 
 /**
  * Generates a SPARQL `GRAPH` block scoping patterns to a named graph.
  *
  * Wraps the clauses in a `graph` block matched against the graph named by `name`, a {@link Variable} ranging over the
- * dataset's graph names or a fixed IRI {@link reference}. An empty list yields an empty `graph … { }` block.
+ * dataset's graph names or a fixed IRI {@link reference}. Empty clauses, such as those produced by {@link nil}, are
+ * dropped first; when none survives, the result is the empty fragment via {@link nil}, which callers must guard against
+ * where a pattern is required.
  *
  * @param name The serialised graph name: a variable or an IRI reference
  * @param clauses The graph pattern clauses to scope
  *
- * @returns The SPARQL `GRAPH` block
+ * @returns The SPARQL `GRAPH` block, or the empty fragment for no clauses
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#queryDataset SPARQL 1.1 Querying the Dataset}
  */
 export function graph(name: SPARQL, ...clauses: readonly SPARQL[]): SPARQL {
-	return `graph ${name} { ${fragment(...clauses)} }`;
+	return map(clauses.filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil() : `graph ${name} { ${fragment(...clauses)} }`
+	);
 }
 
 /**
  * Generates a SPARQL `SERVICE` block delegating patterns to a federated endpoint.
  *
  * Wraps the clauses in a `service` block evaluated against the remote SPARQL endpoint identified by `endpoint`, a
- * {@link Variable} or a fixed IRI {@link reference}. An empty list yields an empty `service … { }` block.
+ * {@link Variable} or a fixed IRI {@link reference}. Empty clauses, such as those produced by {@link nil}, are dropped
+ * first; when none survives, the result is the empty fragment via {@link nil}, which callers must guard against where a
+ * pattern is required.
  *
  * @param endpoint The serialised endpoint: a variable or an IRI reference
  * @param clauses The graph pattern clauses to delegate
  *
- * @returns The SPARQL `SERVICE` block
+ * @returns The SPARQL `SERVICE` block, or the empty fragment for no clauses
  *
  * @see {@link https://www.w3.org/TR/sparql11-federated-query/#service SPARQL 1.1 Federated Query — SERVICE}
  */
 export function service(endpoint: SPARQL, ...clauses: readonly SPARQL[]): SPARQL {
-	return `service ${endpoint} { ${fragment(...clauses)} }`;
+	return map(clauses.filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil() : `service ${endpoint} { ${fragment(...clauses)} }`
+	);
 }
 
 /**
@@ -967,32 +1004,39 @@ export function isNotIn(expression: SPARQL, options: readonly SPARQL[]): SPARQL 
  *
  * Evaluates to `true` when the wrapped pattern has at least one solution in the enclosing context,
  * without binding any of its variables outward. The clauses are {@link fragment | space-joined} into
- * a single group.
+ * a single group. Empty clauses, such as those produced by {@link nil}, are dropped first; when none survives, the
+ * result is the empty fragment via {@link nil}, which callers must guard against where a pattern is required.
  *
  * @param patterns The graph pattern clauses to test for a match
  *
- * @returns The `exists { … }` test
+ * @returns The `exists { … }` test, or the empty fragment for no patterns
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#func-filter-exists SPARQL 1.1 Filter Exists}
  */
 export function exists(...patterns: readonly SPARQL[]): SPARQL {
-	return `exists { ${fragment(...patterns)} }`;
+	return map(patterns.filter(pattern => pattern !== ""), patterns =>
+		patterns.length === 0 ? nil() : `exists { ${fragment(...patterns)} }`
+	);
 }
 
 /**
  * Generates a SPARQL `not exists` graph-pattern test.
  *
  * The negation of {@link exists}: evaluates to `true` when the wrapped pattern has no solution in the
- * enclosing context. The clauses are {@link fragment | space-joined} into a single group.
+ * enclosing context. The clauses are {@link fragment | space-joined} into a single group. Empty clauses, such as those
+ * produced by {@link nil}, are dropped first; when none survives, the result is the empty fragment via {@link nil},
+ * which callers must guard against where a pattern is required.
  *
  * @param patterns The graph pattern clauses to test for absence
  *
- * @returns The `not exists { … }` test
+ * @returns The `not exists { … }` test, or the empty fragment for no patterns
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#func-filter-exists SPARQL 1.1 Filter Exists}
  */
 export function nexists(...patterns: readonly SPARQL[]): SPARQL {
-	return `not exists { ${fragment(...patterns)} }`;
+	return map(patterns.filter(pattern => pattern !== ""), patterns =>
+		patterns.length === 0 ? nil() : `not exists { ${fragment(...patterns)} }`
+	);
 }
 
 /**

@@ -32,22 +32,33 @@ import {
 	day,
 	div,
 	encodeForUri,
+	exists,
 	floor,
 	fragment,
+	graph,
+	group,
+	groupBy,
+	having,
 	hours,
 	iri,
 	isIn,
 	isNotIn,
 	lcase,
+	limit,
 	literal,
 	md5,
+	minus,
 	minutes,
 	month,
 	mul,
+	nexists,
 	nil,
 	none,
 	now,
+	offset,
+	optional,
 	or,
+	orderBy,
 	rand,
 	reference,
 	regex,
@@ -59,6 +70,7 @@ import {
 	sha256,
 	sha384,
 	sha512,
+	service,
 	strafter,
 	strbefore,
 	strdt,
@@ -80,6 +92,7 @@ import {
 	uuid,
 	values,
 	variable,
+	where,
 	year
 } from "./dsl.js";
 
@@ -623,6 +636,46 @@ describe("isNotIn", () => {
 
 });
 
+describe("having", () => {
+
+	it("should wrap a single condition in a having clause", async () => {
+		expect(having(["?count > 10"])).toBe("having (?count > 10)");
+	});
+
+	it("should bracket and conjoin several conditions with &&", async () => {
+		expect(having(["?count > 10", "?sum < 100"])).toBe("having ((?count > 10) && (?sum < 100))");
+	});
+
+	it("should yield the empty fragment for no conditions", async () => {
+		expect(having([])).toBe("");
+	});
+
+});
+
+describe("limit", () => {
+
+	it("should render the limit clause for a positive count", async () => {
+		expect(limit(10)).toBe("limit 10");
+	});
+
+	it("should yield the empty fragment for a count of zero", async () => {
+		expect(limit(0)).toBe("");
+	});
+
+});
+
+describe("offset", () => {
+
+	it("should render the offset clause for a positive start", async () => {
+		expect(offset(10)).toBe("offset 10");
+	});
+
+	it("should yield the empty fragment for a start of zero", async () => {
+		expect(offset(0)).toBe("");
+	});
+
+});
+
 describe("fragment", () => {
 
 	it("should space-join the clauses", async () => {
@@ -677,6 +730,61 @@ describe("empty clause filtering", () => {
 	it("should drop empty predicates in none", async () => {
 		expect(none("a", nil(), "b")).toBe("!(a|b)");
 		expect(none("a", nil())).toBe("!a");
+	});
+
+	it("should drop empty expressions in groupBy", async () => {
+		expect(groupBy("a", nil(), "b")).toBe("group by a b");
+		expect(groupBy(nil())).toBe("");
+	});
+
+	it("should drop empty conditions in orderBy", async () => {
+		expect(orderBy("a", nil(), "b")).toBe("order by a b");
+		expect(orderBy(nil())).toBe("");
+	});
+
+	it("should drop empty conditions in having", async () => {
+		expect(having(["a", nil(), "b"])).toBe("having ((a) && (b))");
+		expect(having([nil()])).toBe("");
+	});
+
+	it("should drop empty clauses in where", async () => {
+		expect(where("a", nil(), "b")).toBe("where { a b }");
+		expect(where(nil())).toBe("");
+	});
+
+	it("should drop empty clauses in group", async () => {
+		expect(group("a", nil(), "b")).toBe("{ a b }");
+		expect(group(nil())).toBe("");
+	});
+
+	it("should drop empty clauses in optional", async () => {
+		expect(optional("a", nil(), "b")).toBe("optional { a b }");
+		expect(optional(nil())).toBe("");
+	});
+
+	it("should drop empty clauses in minus", async () => {
+		expect(minus("a", nil(), "b")).toBe("minus { a b }");
+		expect(minus(nil())).toBe("");
+	});
+
+	it("should drop empty clauses in graph", async () => {
+		expect(graph("?g", "a", nil(), "b")).toBe("graph ?g { a b }");
+		expect(graph("?g", nil())).toBe("");
+	});
+
+	it("should drop empty clauses in service", async () => {
+		expect(service("?s", "a", nil(), "b")).toBe("service ?s { a b }");
+		expect(service("?s", nil())).toBe("");
+	});
+
+	it("should drop empty clauses in exists", async () => {
+		expect(exists("a", nil(), "b")).toBe("exists { a b }");
+		expect(exists(nil())).toBe("");
+	});
+
+	it("should drop empty clauses in nexists", async () => {
+		expect(nexists("a", nil(), "b")).toBe("not exists { a b }");
+		expect(nexists(nil())).toBe("");
 	});
 
 	it("should drop empty conditions in and", async () => {
