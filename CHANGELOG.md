@@ -25,6 +25,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `seconds`, `timezone`, `tz`), and hash functions (`md5`, `sha1`, `sha256`, `sha384`, `sha512`)
 - `@metreeca/wire-sparql` — `./dsl` scalar term serialisers `boolean`, `number`, and `string`, rendering JavaScript
   scalar values into their most compact SPARQL literal forms
+- `@metreeca/wire-sparql` — `./dsl` `Mixed` variadic parameter type, letting combinators accept both spread values and a
+  pre-built array in a single argument list
 
 ### Changed
 
@@ -37,6 +39,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `graph`, `service`, `exists`, `nexists`) and the `groupBy`, `orderBy`, and `having` clause modifiers now drop empty
   clauses and yield the empty fragment when none survive; `limit` and `offset` yield the empty fragment for a count of
   `0`, and `having` brackets and conjoins its variadic conditions with `&&`
+- `@metreeca/wire-sparql` — `./dsl` variadic combinators now accept the `Mixed` argument shape, taking spread values
+  (`f(a, b, c)`) and a pre-built array (`f([a, b, c])`) interchangeably
 
 ### Removed
 

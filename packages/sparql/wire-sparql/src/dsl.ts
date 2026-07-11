@@ -58,6 +58,19 @@ import {
 const type: Reference = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * A variadic parameter mixing bare values and arrays of values in a single argument list.
+ *
+ * Widens a rest parameter so a combinator accepts both spread values (`f(a, b, c)`) and a pre-built array
+ * (`f([a, b, c])`), sparing callers a spread when passing the result of an array-returning helper. Combinators
+ * flatten the arguments one level before use.
+ */
+export type Mixed<T> = readonly (T | readonly T[])[];
+
+
+
 //// Updates (Update §3) ///////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -74,8 +87,8 @@ const type: Reference = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
  *
  * @see {@link https://www.w3.org/TR/sparql11-update/ SPARQL 1.1 Update}
  */
-export function update(...updates: readonly SPARQL[]): SPARQL {
-	return updates.filter(operation => operation !== "").join("; ");
+export function update(...updates: Mixed<SPARQL>): SPARQL {
+	return updates.flat().filter(operation => operation !== "").join("; ");
 }
 
 /**
@@ -99,8 +112,8 @@ export function update(...updates: readonly SPARQL[]): SPARQL {
  */
 export function deleet(content: SPARQL | readonly SPARQL[], where?: SPARQL): SPARQL {
 	return where === undefined
-		? `delete data { ${isString(content) ? content : fragment(...content)} }`
-		: `delete { ${isString(content) ? content : fragment(...content)} } ${where}`;
+		? `delete data { ${isString(content) ? content : fragment(content)} }`
+		: `delete { ${isString(content) ? content : fragment(content)} } ${where}`;
 }
 
 /**
@@ -121,8 +134,8 @@ export function deleet(content: SPARQL | readonly SPARQL[], where?: SPARQL): SPA
  */
 export function insert(content: SPARQL | readonly SPARQL[], where?: SPARQL): SPARQL {
 	return where === undefined
-		? `insert data { ${isString(content) ? content : fragment(...content)} }`
-		: `insert { ${isString(content) ? content : fragment(...content)} } ${where}`;
+		? `insert data { ${isString(content) ? content : fragment(content)} }`
+		: `insert { ${isString(content) ? content : fragment(content)} } ${where}`;
 }
 
 
@@ -151,9 +164,9 @@ export function insert(content: SPARQL | readonly SPARQL[], where?: SPARQL): SPA
  *
  * @see {@link https://www.w3.org/TR/sparql11-update/#deleteInsert SPARQL 1.1 Update — Delete/Insert}
  */
-export function witt(graph: Reference, ...clauses: readonly SPARQL[]): SPARQL {
-	return map(clauses.filter(clause => clause !== ""), clauses =>
-		clauses.length === 0 ? nil() : `with ${reference(graph)} ${fragment(...clauses)}`
+export function witt(graph: Reference, ...clauses: Mixed<SPARQL>): SPARQL {
+	return map(clauses.flat().filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil() : `with ${reference(graph)} ${fragment(clauses)}`
 	);
 }
 
@@ -172,8 +185,8 @@ export function witt(graph: Reference, ...clauses: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-update/#deleteInsert SPARQL 1.1 Update — Delete/Insert}
  */
-export function using(...graphs: readonly Reference[]): SPARQL {
-	return map(graphs.filter(graph => graph !== ""), graphs =>
+export function using(...graphs: Mixed<Reference>): SPARQL {
+	return map(graphs.flat().filter(graph => graph !== ""), graphs =>
 		graphs.length === 0 ? nil() : graphs.map(graph => `using ${reference(graph)}`).join(" ")
 	);
 }
@@ -193,8 +206,8 @@ export function using(...graphs: readonly Reference[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-update/#deleteInsert SPARQL 1.1 Update — Delete/Insert}
  */
-export function usingNamed(...graphs: readonly Reference[]): SPARQL {
-	return map(graphs.filter(graph => graph !== ""), graphs =>
+export function usingNamed(...graphs: Mixed<Reference>): SPARQL {
+	return map(graphs.flat().filter(graph => graph !== ""), graphs =>
 		graphs.length === 0 ? nil() : graphs.map(graph => `using named ${reference(graph)}`).join(" ")
 	);
 }
@@ -214,7 +227,7 @@ export function usingNamed(...graphs: readonly Reference[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#ask SPARQL 1.1 ASK}
  */
-export function ask(...clauses: readonly SPARQL[]): SPARQL {
+export function ask(...clauses: Mixed<SPARQL>): SPARQL {
 	return `ask ${fragment(...clauses)}`;
 }
 
@@ -232,15 +245,16 @@ export function ask(...clauses: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#select SPARQL 1.1 SELECT}
  */
-export function select(projection: SPARQL | readonly SPARQL[], ...clauses: readonly SPARQL[]): SPARQL {
-	return `select ${isString(projection) ? projection : fragment(...projection)} ${fragment(...clauses)}`;
+export function select(projection: SPARQL | readonly SPARQL[], ...clauses: Mixed<SPARQL>): SPARQL {
+	return `select ${isString(projection) ? projection : fragment(projection)} ${fragment(...clauses)}`;
 }
 
 /**
  * Generates a SPARQL `distinct` modifier over a projection or aggregate argument.
  *
  * Prefixes the space-joined expressions with `distinct`, eliminating duplicate solutions in a `select` projection or
- * deduplicating an aggregate's input, as in {@link count}. An empty list yields the bare `distinct` keyword.
+ * deduplicating an aggregate's input, as in {@link count}. Empty expressions, such as those produced by {@link nil},
+ * are dropped first; an empty list, or one leaving no expression, yields the bare `distinct` keyword.
  *
  * @param expressions The projection variables or aggregate argument to deduplicate
  *
@@ -248,15 +262,18 @@ export function select(projection: SPARQL | readonly SPARQL[], ...clauses: reado
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#modDuplicates SPARQL 1.1 Duplicate Solutions}
  */
-export function distinct(...expressions: readonly SPARQL[]): SPARQL {
-	return expressions.length === 0 ? "distinct" : `distinct ${fragment(...expressions)}`;
+export function distinct(...expressions: Mixed<SPARQL>): SPARQL {
+	return map(expressions.flat().filter(expression => expression !== ""), expressions =>
+		expressions.length === 0 ? "distinct" : `distinct ${fragment(expressions)}`
+	);
 }
 
 /**
  * Generates a SPARQL `reduced` modifier over a projection.
  *
  * Prefixes the space-joined projection with `reduced`, permitting but not requiring duplicate elimination, a cheaper
- * alternative to {@link distinct}. An empty list yields the bare `reduced` keyword.
+ * alternative to {@link distinct}. Empty expressions, such as those produced by {@link nil}, are dropped first; an
+ * empty list, or one leaving no expression, yields the bare `reduced` keyword.
  *
  * @param expressions The projection variables to permit deduplicating
  *
@@ -264,8 +281,10 @@ export function distinct(...expressions: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#modReduced SPARQL 1.1 Reduced Solutions}
  */
-export function reduced(...expressions: readonly SPARQL[]): SPARQL {
-	return expressions.length === 0 ? "reduced" : `reduced ${fragment(...expressions)}`;
+export function reduced(...expressions: Mixed<SPARQL>): SPARQL {
+	return map(expressions.flat().filter(expression => expression !== ""), expressions =>
+		expressions.length === 0 ? "reduced" : `reduced ${fragment(expressions)}`
+	);
 }
 
 /**
@@ -313,8 +332,8 @@ export function as(expression: SPARQL, variable: SPARQL): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#specifyingDataset SPARQL 1.1 Specifying RDF Datasets}
  */
-export function from(...graphs: readonly Reference[]): SPARQL {
-	return map(graphs.filter(graph => graph !== ""), graphs =>
+export function from(...graphs: Mixed<Reference>): SPARQL {
+	return map(graphs.flat().filter(graph => graph !== ""), graphs =>
 		graphs.length === 0 ? nil() : graphs.map(graph => `from ${reference(graph)}`).join(" ")
 	);
 }
@@ -333,8 +352,8 @@ export function from(...graphs: readonly Reference[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#specifyingDataset SPARQL 1.1 Specifying RDF Datasets}
  */
-export function fromNamed(...graphs: readonly Reference[]): SPARQL {
-	return map(graphs.filter(graph => graph !== ""), graphs =>
+export function fromNamed(...graphs: Mixed<Reference>): SPARQL {
+	return map(graphs.flat().filter(graph => graph !== ""), graphs =>
 		graphs.length === 0 ? nil() : graphs.map(graph => `from named ${reference(graph)}`).join(" ")
 	);
 }
@@ -353,9 +372,9 @@ export function fromNamed(...graphs: readonly Reference[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#aggregates SPARQL 1.1 Aggregates}
  */
-export function groupBy(...expressions: readonly SPARQL[]): SPARQL {
-	return map(expressions.filter(expression => expression !== ""), expressions =>
-		expressions.length === 0 ? nil() : `group by ${fragment(...expressions)}`
+export function groupBy(...expressions: Mixed<SPARQL>): SPARQL {
+	return map(expressions.flat().filter(expression => expression !== ""), expressions =>
+		expressions.length === 0 ? nil() : `group by ${fragment(expressions)}`
 	);
 }
 
@@ -373,11 +392,11 @@ export function groupBy(...expressions: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#aggregates SPARQL 1.1 Aggregates}
  */
-export function having(...conditions: readonly SPARQL[]): SPARQL {
-	return map(conditions.filter(condition => condition !== ""), conditions =>
+export function having(...conditions: Mixed<SPARQL>): SPARQL {
+	return map(conditions.flat().filter(condition => condition !== ""), conditions =>
 		conditions.length === 0 ? nil()
 			: conditions.length === 1 ? `having (${conditions[0]})`
-				: `having (${and(...conditions.map(condition => `(${condition})`))})`
+				: `having (${and(conditions.map(condition => `(${condition})`))})`
 	);
 }
 
@@ -394,9 +413,9 @@ export function having(...conditions: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#modOrderBy SPARQL 1.1 Order By}
  */
-export function orderBy(...conditions: readonly SPARQL[]): SPARQL {
-	return map(conditions.filter(condition => condition !== ""), conditions =>
-		conditions.length === 0 ? nil() : `order by ${fragment(...conditions)}`
+export function orderBy(...conditions: Mixed<SPARQL>): SPARQL {
+	return map(conditions.flat().filter(condition => condition !== ""), conditions =>
+		conditions.length === 0 ? nil() : `order by ${fragment(conditions)}`
 	);
 }
 
@@ -473,9 +492,9 @@ export function offset(value: number): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#WritingSimpleQueries SPARQL 1.1 Writing Simple Queries}
  */
-export function where(...clauses: readonly SPARQL[]): SPARQL {
-	return map(clauses.filter(clause => clause !== ""), clauses =>
-		clauses.length === 0 ? nil() : `where { ${fragment(...clauses)} }`
+export function where(...clauses: Mixed<SPARQL>): SPARQL {
+	return map(clauses.flat().filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil() : `where { ${fragment(clauses)} }`
 	);
 }
 
@@ -495,8 +514,8 @@ export function where(...clauses: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#alternatives SPARQL 1.1 Alternative Patterns}
  */
-export function union(...clauses: readonly SPARQL[]): SPARQL {
-	return map(clauses.filter(clause => clause !== ""), clauses =>
+export function union(...clauses: Mixed<SPARQL>): SPARQL {
+	return map(clauses.flat().filter(clause => clause !== ""), clauses =>
 		clauses.length === 0 ? nil()
 			: clauses.length === 1 ? clauses[0]
 				: clauses.map(clause => group(clause)).join(" union ")
@@ -516,9 +535,9 @@ export function union(...clauses: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#optionals SPARQL 1.1 Optional Patterns}
  */
-export function optional(...clauses: readonly SPARQL[]): SPARQL {
-	return map(clauses.filter(clause => clause !== ""), clauses =>
-		clauses.length === 0 ? nil() : `optional { ${fragment(...clauses)} }`
+export function optional(...clauses: Mixed<SPARQL>): SPARQL {
+	return map(clauses.flat().filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil() : `optional { ${fragment(clauses)} }`
 	);
 }
 
@@ -534,9 +553,9 @@ export function optional(...clauses: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#GroupPatterns SPARQL 1.1 Group Graph Patterns}
  */
-export function group(...clauses: readonly SPARQL[]): SPARQL {
-	return map(clauses.filter(clause => clause !== ""), clauses =>
-		clauses.length === 0 ? nil() : `{ ${fragment(...clauses)} }`
+export function group(...clauses: Mixed<SPARQL>): SPARQL {
+	return map(clauses.flat().filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil() : `{ ${fragment(clauses)} }`
 	);
 }
 
@@ -553,9 +572,9 @@ export function group(...clauses: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#negation SPARQL 1.1 Negation}
  */
-export function minus(...clauses: readonly SPARQL[]): SPARQL {
-	return map(clauses.filter(clause => clause !== ""), clauses =>
-		clauses.length === 0 ? nil() : `minus { ${fragment(...clauses)} }`
+export function minus(...clauses: Mixed<SPARQL>): SPARQL {
+	return map(clauses.flat().filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil() : `minus { ${fragment(clauses)} }`
 	);
 }
 
@@ -574,9 +593,9 @@ export function minus(...clauses: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#queryDataset SPARQL 1.1 Querying the Dataset}
  */
-export function graph(name: SPARQL, ...clauses: readonly SPARQL[]): SPARQL {
-	return map(clauses.filter(clause => clause !== ""), clauses =>
-		clauses.length === 0 ? nil() : `graph ${name} { ${fragment(...clauses)} }`
+export function graph(name: SPARQL, ...clauses: Mixed<SPARQL>): SPARQL {
+	return map(clauses.flat().filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil() : `graph ${name} { ${fragment(clauses)} }`
 	);
 }
 
@@ -595,9 +614,9 @@ export function graph(name: SPARQL, ...clauses: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-federated-query/#service SPARQL 1.1 Federated Query — SERVICE}
  */
-export function service(endpoint: SPARQL, ...clauses: readonly SPARQL[]): SPARQL {
-	return map(clauses.filter(clause => clause !== ""), clauses =>
-		clauses.length === 0 ? nil() : `service ${endpoint} { ${fragment(...clauses)} }`
+export function service(endpoint: SPARQL, ...clauses: Mixed<SPARQL>): SPARQL {
+	return map(clauses.flat().filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil() : `service ${endpoint} { ${fragment(clauses)} }`
 	);
 }
 
@@ -618,7 +637,7 @@ export function service(endpoint: SPARQL, ...clauses: readonly SPARQL[]): SPARQL
  * @see {@link https://www.w3.org/TR/sparql11-query/#inline-data SPARQL 1.1 Inline Data}
  */
 export function values(variables: readonly SPARQL[], rows: readonly (readonly SPARQL[])[]): SPARQL {
-	return `values (${variables.filter(variable => variable !== "").join(" ")}) { ${fragment(...rows.map(row =>
+	return `values (${variables.filter(variable => variable !== "").join(" ")}) { ${fragment(rows.map(row =>
 		`(${row.filter(term => term !== "").join(" ")})`
 	))} }`;
 }
@@ -633,8 +652,8 @@ export function values(variables: readonly SPARQL[], rows: readonly (readonly SP
  *
  * @returns The space-joined fragment, excluding empty clauses
  */
-export function fragment(...clauses: readonly SPARQL[]): SPARQL {
-	return clauses.filter(clause => clause !== "").join(" ");
+export function fragment(...clauses: Mixed<SPARQL>): SPARQL {
+	return clauses.flat().filter(clause => clause !== "").join(" ");
 }
 
 /**
@@ -711,8 +730,8 @@ export function nil(): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#propertypaths SPARQL 1.1 Property Paths}
  */
-export function seq(...paths: readonly SPARQL[]): SPARQL {
-	return paths.filter(path => path !== "").join("/");
+export function seq(...paths: Mixed<SPARQL>): SPARQL {
+	return paths.flat().filter(path => path !== "").join("/");
 }
 
 /**
@@ -728,8 +747,8 @@ export function seq(...paths: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#propertypaths SPARQL 1.1 Property Paths}
  */
-export function alt(...paths: readonly SPARQL[]): SPARQL {
-	return paths.filter(path => path !== "").join("|");
+export function alt(...paths: Mixed<SPARQL>): SPARQL {
+	return paths.flat().filter(path => path !== "").join("|");
 }
 
 /**
@@ -809,8 +828,8 @@ export function opt(path: SPARQL): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#propertypaths SPARQL 1.1 Property Paths}
  */
-export function none(...predicates: readonly SPARQL[]): SPARQL {
-	return map(predicates.filter(predicate => predicate !== ""), set =>
+export function none(...predicates: Mixed<SPARQL>): SPARQL {
+	return map(predicates.flat().filter(predicate => predicate !== ""), set =>
 		set.length === 1 ? `!${set[0]}` : `!(${set.join("|")})`
 	);
 }
@@ -848,8 +867,8 @@ export function not(condition: SPARQL): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#func-logical-and SPARQL 1.1 Logical And}
  */
-export function and(...conditions: readonly SPARQL[]): SPARQL {
-	return conditions.filter(condition => condition !== "").join(" && ");
+export function and(...conditions: Mixed<SPARQL>): SPARQL {
+	return conditions.flat().filter(condition => condition !== "").join(" && ");
 }
 
 /**
@@ -866,8 +885,8 @@ export function and(...conditions: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#func-logical-or SPARQL 1.1 Logical Or}
  */
-export function or(...conditions: readonly SPARQL[]): SPARQL {
-	return conditions.filter(condition => condition !== "").join(" || ");
+export function or(...conditions: Mixed<SPARQL>): SPARQL {
+	return conditions.flat().filter(condition => condition !== "").join(" || ");
 }
 
 
@@ -1063,8 +1082,8 @@ export function iif(condition: SPARQL, then: SPARQL, otherwise: SPARQL): SPARQL 
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#func-coalesce SPARQL 1.1 coalesce}
  */
-export function coalesce(...expressions: readonly SPARQL[]): SPARQL {
-	return `coalesce(${expressions.filter(expression => expression !== "").join(", ")})`;
+export function coalesce(...expressions: Mixed<SPARQL>): SPARQL {
+	return `coalesce(${expressions.flat().filter(expression => expression !== "").join(", ")})`;
 }
 
 /**
@@ -1136,9 +1155,9 @@ export function isNotIn(expression: SPARQL, options: readonly SPARQL[]): SPARQL 
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#func-filter-exists SPARQL 1.1 Filter Exists}
  */
-export function exists(...patterns: readonly SPARQL[]): SPARQL {
-	return map(patterns.filter(pattern => pattern !== ""), patterns =>
-		patterns.length === 0 ? nil() : `exists { ${fragment(...patterns)} }`
+export function exists(...patterns: Mixed<SPARQL>): SPARQL {
+	return map(patterns.flat().filter(pattern => pattern !== ""), patterns =>
+		patterns.length === 0 ? nil() : `exists { ${fragment(patterns)} }`
 	);
 }
 
@@ -1156,9 +1175,9 @@ export function exists(...patterns: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#func-filter-exists SPARQL 1.1 Filter Exists}
  */
-export function nexists(...patterns: readonly SPARQL[]): SPARQL {
-	return map(patterns.filter(pattern => pattern !== ""), patterns =>
-		patterns.length === 0 ? nil() : `not exists { ${fragment(...patterns)} }`
+export function nexists(...patterns: Mixed<SPARQL>): SPARQL {
+	return map(patterns.flat().filter(pattern => pattern !== ""), patterns =>
+		patterns.length === 0 ? nil() : `not exists { ${fragment(patterns)} }`
 	);
 }
 
@@ -1177,8 +1196,8 @@ export function nexists(...patterns: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#SparqlOps SPARQL 1.1 Function Library}
  */
-export function call(fn: Identifier, ...args: readonly SPARQL[]): SPARQL {
-	return `${fn}(${args.filter(arg => arg !== "").join(", ")})`;
+export function call(fn: Identifier, ...args: Mixed<SPARQL>): SPARQL {
+	return `${fn}(${args.flat().filter(arg => arg !== "").join(", ")})`;
 }
 
 
@@ -1569,8 +1588,8 @@ export function encodeForUri(expression: SPARQL): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#func-concat SPARQL 1.1 CONCAT}
  */
-export function concat(...expressions: readonly SPARQL[]): SPARQL {
-	return `concat(${expressions.filter(expression => expression !== "").join(", ")})`;
+export function concat(...expressions: Mixed<SPARQL>): SPARQL {
+	return `concat(${expressions.flat().filter(expression => expression !== "").join(", ")})`;
 }
 
 /**
