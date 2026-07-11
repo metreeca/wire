@@ -86,6 +86,9 @@ export function update(...updates: readonly SPARQL[]): SPARQL {
  * `content` template instantiates. Pass `content` as a single serialised block or a list of clauses joined into a
  * fragment.
  *
+ * > [!NOTE]
+ * > Named `deleet` because `delete` is a reserved word.
+ *
  * @param content The triples to remove: ground triples for `delete data`, or a triple template for `delete … where`
  * @param where The optional {@link where} clause selecting solutions to instantiate against; omit for a ground form
  *
@@ -123,7 +126,81 @@ export function insert(content: SPARQL | readonly SPARQL[], where?: SPARQL): SPA
 }
 
 
-//// Queries (§16) /////////////////////////////////////////////////////////////////////////////////////////////////////
+/**
+ * Generates a SPARQL `WITH` update scoping an operation to a named graph.
+ *
+ * Prefixes the space-joined clauses with `with <graph>`, serialising `graph` via {@link reference} and setting it as
+ * the default graph for both the template and the {@link where} pattern of the enclosed {@link deleet} or
+ * {@link insert} operation, the way {@link graph} scopes a query pattern. Empty clauses, such as those produced by
+ * {@link nil}, are dropped first; when none survives, the result is the empty fragment via {@link nil}, which callers
+ * must guard against where an operation is required.
+ *
+ * > [!NOTE]
+ * > Named `witt` because `with` is a reserved word.
+ *
+ * > [!IMPORTANT]
+ * > `WITH` applies only to the template forms of {@link deleet} and {@link insert}, those carrying a {@link where}
+ * > clause. It has no effect on the ground `delete data` and `insert data` forms, whose triples name their target
+ * > graphs inline, so pass only template operations as `clauses`.
+ *
+ * @param graph The IRI {@link reference} of the target graph
+ * @param clauses The update operation clauses to scope, typically a {@link deleet} or {@link insert} template followed
+ *     by its {@link where} clause
+ *
+ * @returns The SPARQL `WITH` update, or the empty fragment for no clauses
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-update/#deleteInsert SPARQL 1.1 Update — Delete/Insert}
+ */
+export function witt(graph: Reference, ...clauses: readonly SPARQL[]): SPARQL {
+	return map(clauses.filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil() : `with ${reference(graph)} ${fragment(...clauses)}`
+	);
+}
+
+/**
+ * Generates SPARQL `USING` clauses declaring an update's default-graph dataset.
+ *
+ * Emits one `using <graph>` clause per graph, serialising each via {@link reference} and merging it into the default
+ * graph the {@link where} pattern of a {@link deleet} or {@link insert} template matches against; repeat graphs to
+ * build a multi-graph default dataset. The clauses sit between the update template and its {@link where} clause. Empty
+ * graphs, such as those produced by {@link nil}, are dropped first; an empty list yields the empty fragment, leaving
+ * the dataset to the graph store's default.
+ *
+ * @param graphs The IRI {@link reference | references} of the default-graph sources
+ *
+ * @returns The space-joined SPARQL `USING` clauses, or the empty fragment for no graphs
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-update/#deleteInsert SPARQL 1.1 Update — Delete/Insert}
+ */
+export function using(...graphs: readonly Reference[]): SPARQL {
+	return map(graphs.filter(graph => graph !== ""), graphs =>
+		graphs.length === 0 ? nil() : graphs.map(graph => `using ${reference(graph)}`).join(" ")
+	);
+}
+
+/**
+ * Generates SPARQL `USING NAMED` clauses adding named graphs to an update dataset.
+ *
+ * Emits one `using named <graph>` clause per graph, serialising each via {@link reference} and adding the IRI as a
+ * named graph the {@link where} pattern of a {@link deleet} or {@link insert} template can match with a {@link graph}
+ * block; repeat graphs to add several named graphs. The clauses sit between the update template and its {@link where}
+ * clause. Empty graphs, such as those produced by {@link nil}, are dropped first; an empty list yields the empty
+ * fragment, adding no named graphs.
+ *
+ * @param graphs The IRI {@link reference | references} of the named graphs
+ *
+ * @returns The space-joined SPARQL `USING NAMED` clauses, or the empty fragment for no graphs
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-update/#deleteInsert SPARQL 1.1 Update — Delete/Insert}
+ */
+export function usingNamed(...graphs: readonly Reference[]): SPARQL {
+	return map(graphs.filter(graph => graph !== ""), graphs =>
+		graphs.length === 0 ? nil() : graphs.map(graph => `using named ${reference(graph)}`).join(" ")
+	);
+}
+
+
+//// Queries (§13/§15/§16) /////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Generates a SPARQL `ASK` query.
@@ -221,27 +298,47 @@ export function as(expression: SPARQL, variable: SPARQL): SPARQL {
 }
 
 
-//// Query Clauses (§15) ///////////////////////////////////////////////////////////////////////////////////////////////
-
 /**
- * Generates a SPARQL `WHERE` clause.
+ * Generates SPARQL `FROM` clauses declaring a query's default-graph dataset.
  *
- * Wraps the space-joined clauses in a `where { … }` block: the graph pattern a {@link select} or {@link ask} query
- * matches against, and the source a {@link deleet} or {@link insert} update draws its solutions from. Empty clauses,
- * such as those produced by {@link nil}, are dropped first; when none survives, the result is the empty fragment via
- * {@link nil}, which callers must guard against where a body is required.
+ * Emits one `from <graph>` clause per graph, serialising each via {@link reference} and merging it into the default
+ * graph a {@link select} or {@link ask} query matches against; repeat graphs to build a multi-graph default dataset.
+ * The clauses sit between the query projection and its {@link where} clause. Empty graphs, such as those produced by
+ * {@link nil}, are dropped first; an empty list yields the empty fragment, leaving the dataset to the endpoint's
+ * default.
  *
- * @param clauses The graph pattern clauses forming the query body
+ * @param graphs The IRI {@link reference | references} of the default-graph sources
  *
- * @returns The SPARQL `WHERE` clause, or the empty fragment for no clauses
+ * @returns The space-joined SPARQL `FROM` clauses, or the empty fragment for no graphs
  *
- * @see {@link https://www.w3.org/TR/sparql11-query/#WritingSimpleQueries SPARQL 1.1 Writing Simple Queries}
+ * @see {@link https://www.w3.org/TR/sparql11-query/#specifyingDataset SPARQL 1.1 Specifying RDF Datasets}
  */
-export function where(...clauses: readonly SPARQL[]): SPARQL {
-	return map(clauses.filter(clause => clause !== ""), clauses =>
-		clauses.length === 0 ? nil() : `where { ${fragment(...clauses)} }`
+export function from(...graphs: readonly Reference[]): SPARQL {
+	return map(graphs.filter(graph => graph !== ""), graphs =>
+		graphs.length === 0 ? nil() : graphs.map(graph => `from ${reference(graph)}`).join(" ")
 	);
 }
+
+/**
+ * Generates SPARQL `FROM NAMED` clauses adding named graphs to a query dataset.
+ *
+ * Emits one `from named <graph>` clause per graph, serialising each via {@link reference} and adding the IRI as a named
+ * graph a {@link select} or {@link ask} query can match with a {@link graph} block; repeat graphs to add several named
+ * graphs. The clauses sit between the query projection and its {@link where} clause. Empty graphs, such as those
+ * produced by {@link nil}, are dropped first; an empty list yields the empty fragment, adding no named graphs.
+ *
+ * @param graphs The IRI {@link reference | references} of the named graphs
+ *
+ * @returns The space-joined SPARQL `FROM NAMED` clauses, or the empty fragment for no graphs
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#specifyingDataset SPARQL 1.1 Specifying RDF Datasets}
+ */
+export function fromNamed(...graphs: readonly Reference[]): SPARQL {
+	return map(graphs.filter(graph => graph !== ""), graphs =>
+		graphs.length === 0 ? nil() : graphs.map(graph => `from named ${reference(graph)}`).join(" ")
+	);
+}
+
 
 /**
  * Generates a SPARQL `GROUP BY` clause.
@@ -357,6 +454,29 @@ export function limit(value: number): SPARQL {
  */
 export function offset(value: number): SPARQL {
 	return value === 0 ? nil() : `offset ${value}`;
+}
+
+
+//// Query Clauses (§15) ///////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Generates a SPARQL `WHERE` clause.
+ *
+ * Wraps the space-joined clauses in a `where { … }` block: the graph pattern a {@link select} or {@link ask} query
+ * matches against, and the source a {@link deleet} or {@link insert} update draws its solutions from. Empty clauses,
+ * such as those produced by {@link nil}, are dropped first; when none survives, the result is the empty fragment via
+ * {@link nil}, which callers must guard against where a body is required.
+ *
+ * @param clauses The graph pattern clauses forming the query body
+ *
+ * @returns The SPARQL `WHERE` clause, or the empty fragment for no clauses
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#WritingSimpleQueries SPARQL 1.1 Writing Simple Queries}
+ */
+export function where(...clauses: readonly SPARQL[]): SPARQL {
+	return map(clauses.filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil() : `where { ${fragment(...clauses)} }`
+	);
 }
 
 
@@ -913,6 +1033,9 @@ export function div(x: SPARQL, y: SPARQL): SPARQL {
  * Evaluates to `then` when `condition` holds and to `otherwise` when it fails. SPARQL keeps the
  * unselected branch lazy (§17.4.1.2), so a branch that would raise an evaluation error is left
  * unevaluated unless selected.
+ *
+ * > [!NOTE]
+ * > Named `iif` because `if` is a reserved word.
  *
  * @param condition The boolean test expression
  * @param then The expression selected when `condition` evaluates to `true`

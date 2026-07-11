@@ -177,6 +177,9 @@ export function property(subject: Some<Subject>, predicate: Predicate, objects: 
  */
 export function property<V>(subject: Some<Subject>, predicate: Predicate, objects: Some<V>, mapper: Mapper<V>): Graph;
 
+/**
+ * Builds direct triples, or {@link Mapper | maps} each object and embeds sub-graphs at their root.
+ */
 export function property<V>(subject: Some<Subject>, predicate: Predicate, objects: Some<V>, mapper?: Mapper<V>): Graph {
 
 	if ( mapper ) {

@@ -36,6 +36,8 @@ import {
 	exists,
 	floor,
 	fragment,
+	from,
+	fromNamed,
 	graph,
 	group,
 	groupBy,
@@ -92,10 +94,13 @@ import {
 	ucase,
 	union,
 	update,
+	using,
+	usingNamed,
 	uuid,
 	values,
 	variable,
 	where,
+	witt,
 	year
 } from "./dsl.js";
 
@@ -719,6 +724,82 @@ describe("having", () => {
 
 });
 
+describe("from", () => {
+
+	it("should render a from clause serialising a single graph", async () => {
+		expect(from("urn:g")).toBe("from <urn:g>");
+	});
+
+	it("should render one from clause per graph for a multi-graph default dataset", async () => {
+		expect(from("urn:g1", "urn:g2")).toBe("from <urn:g1> from <urn:g2>");
+	});
+
+	it("should yield the empty fragment for no graphs", async () => {
+		expect(from()).toBe("");
+	});
+
+});
+
+describe("fromNamed", () => {
+
+	it("should render a from named clause serialising a single graph", async () => {
+		expect(fromNamed("urn:g")).toBe("from named <urn:g>");
+	});
+
+	it("should render one from named clause per graph", async () => {
+		expect(fromNamed("urn:g1", "urn:g2")).toBe("from named <urn:g1> from named <urn:g2>");
+	});
+
+	it("should yield the empty fragment for no graphs", async () => {
+		expect(fromNamed()).toBe("");
+	});
+
+});
+
+describe("using", () => {
+
+	it("should render a using clause serialising a single graph", async () => {
+		expect(using("urn:g")).toBe("using <urn:g>");
+	});
+
+	it("should render one using clause per graph for a multi-graph default dataset", async () => {
+		expect(using("urn:g1", "urn:g2")).toBe("using <urn:g1> using <urn:g2>");
+	});
+
+	it("should yield the empty fragment for no graphs", async () => {
+		expect(using()).toBe("");
+	});
+
+});
+
+describe("usingNamed", () => {
+
+	it("should render a using named clause serialising a single graph", async () => {
+		expect(usingNamed("urn:g")).toBe("using named <urn:g>");
+	});
+
+	it("should render one using named clause per graph", async () => {
+		expect(usingNamed("urn:g1", "urn:g2")).toBe("using named <urn:g1> using named <urn:g2>");
+	});
+
+	it("should yield the empty fragment for no graphs", async () => {
+		expect(usingNamed()).toBe("");
+	});
+
+});
+
+describe("witt", () => {
+
+	it("should prefix the clauses with a with block serialising the graph", async () => {
+		expect(witt("urn:g", "a", "b")).toBe("with <urn:g> a b");
+	});
+
+	it("should yield the empty fragment for no clauses", async () => {
+		expect(witt("urn:g")).toBe("");
+	});
+
+});
+
 describe("limit", () => {
 
 	it("should render the limit clause for a positive count", async () => {
@@ -812,6 +893,31 @@ describe("empty clause filtering", () => {
 	it("should drop empty conditions in having", async () => {
 		expect(having("a", nil(), "b")).toBe("having ((a) && (b))");
 		expect(having(nil())).toBe("");
+	});
+
+	it("should drop empty graphs in from", async () => {
+		expect(from("urn:g1", nil(), "urn:g2")).toBe("from <urn:g1> from <urn:g2>");
+		expect(from(nil())).toBe("");
+	});
+
+	it("should drop empty graphs in fromNamed", async () => {
+		expect(fromNamed("urn:g1", nil(), "urn:g2")).toBe("from named <urn:g1> from named <urn:g2>");
+		expect(fromNamed(nil())).toBe("");
+	});
+
+	it("should drop empty graphs in using", async () => {
+		expect(using("urn:g1", nil(), "urn:g2")).toBe("using <urn:g1> using <urn:g2>");
+		expect(using(nil())).toBe("");
+	});
+
+	it("should drop empty graphs in usingNamed", async () => {
+		expect(usingNamed("urn:g1", nil(), "urn:g2")).toBe("using named <urn:g1> using named <urn:g2>");
+		expect(usingNamed(nil())).toBe("");
+	});
+
+	it("should drop empty clauses in witt", async () => {
+		expect(witt("urn:g", "a", nil(), "b")).toBe("with <urn:g> a b");
+		expect(witt("urn:g", nil())).toBe("");
 	});
 
 	it("should drop empty clauses in where", async () => {

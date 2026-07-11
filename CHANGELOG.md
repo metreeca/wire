@@ -15,6 +15,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   transaction's updates into a single request and logging each operation's elapsed time respectively
 - `@metreeca/wire-sparql` — `./dsl` query and update combinators: `ask`, `select`, `all`, `where`, `insert`, `deleet`,
   and `update`
+- `@metreeca/wire-sparql` — `./dsl` RDF dataset clause combinators: `from` and `fromNamed` declaring a query's default
+  and named graphs, and `witt`, `using`, and `usingNamed` declaring an update's target, default, and named graphs
 - `@metreeca/wire-sparql` — `./dsl` expression combinators for the SPARQL built-in function library: arithmetic
   operators (`add`, `sub`, `mul`, `div`), the `isNotIn` membership test, RDF term constructors (`iri`, `bnode`,
   `strdt`, `strlang`, `uuid`, `struuid`), string functions (`strlen`, `substr`, `ucase`, `lcase`, `strstarts`,
