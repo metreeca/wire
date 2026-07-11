@@ -706,15 +706,15 @@ describe("isNotIn", () => {
 describe("having", () => {
 
 	it("should wrap a single condition in a having clause", async () => {
-		expect(having(["?count > 10"])).toBe("having (?count > 10)");
+		expect(having("?count > 10")).toBe("having (?count > 10)");
 	});
 
 	it("should bracket and conjoin several conditions with &&", async () => {
-		expect(having(["?count > 10", "?sum < 100"])).toBe("having ((?count > 10) && (?sum < 100))");
+		expect(having("?count > 10", "?sum < 100")).toBe("having ((?count > 10) && (?sum < 100))");
 	});
 
 	it("should yield the empty fragment for no conditions", async () => {
-		expect(having([])).toBe("");
+		expect(having()).toBe("");
 	});
 
 });
@@ -810,8 +810,8 @@ describe("empty clause filtering", () => {
 	});
 
 	it("should drop empty conditions in having", async () => {
-		expect(having(["a", nil(), "b"])).toBe("having ((a) && (b))");
-		expect(having([nil()])).toBe("");
+		expect(having("a", nil(), "b")).toBe("having ((a) && (b))");
+		expect(having(nil())).toBe("");
 	});
 
 	it("should drop empty clauses in where", async () => {

@@ -276,8 +276,8 @@ export function groupBy(...expressions: readonly SPARQL[]): SPARQL {
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#aggregates SPARQL 1.1 Aggregates}
  */
-export function having(conditions: readonly SPARQL[]): SPARQL {
-	return map(conditions.filter(constraint => constraint !== ""), conditions =>
+export function having(...conditions: readonly SPARQL[]): SPARQL {
+	return map(conditions.filter(condition => condition !== ""), conditions =>
 		conditions.length === 0 ? nil()
 			: conditions.length === 1 ? `having (${conditions[0]})`
 				: `having (${and(...conditions.map(condition => `(${condition})`))})`
@@ -376,10 +376,10 @@ export function offset(value: number): SPARQL {
  * @see {@link https://www.w3.org/TR/sparql11-query/#alternatives SPARQL 1.1 Alternative Patterns}
  */
 export function union(...clauses: readonly SPARQL[]): SPARQL {
-	return map(clauses.filter(clause => clause !== ""), patterns =>
-		patterns.length === 0 ? nil()
-			: patterns.length === 1 ? patterns[0]
-				: patterns.map(clause => group(clause)).join(" union ")
+	return map(clauses.filter(clause => clause !== ""), clauses =>
+		clauses.length === 0 ? nil()
+			: clauses.length === 1 ? clauses[0]
+				: clauses.map(clause => group(clause)).join(" union ")
 	);
 }
 
