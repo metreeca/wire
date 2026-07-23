@@ -71,7 +71,7 @@
  */
 
 import { type Scalar } from "@metreeca/core";
-import { list, type Some } from "@metreeca/core/combo";
+import { some, type Some } from "@metreeca/core/combo";
 import { Tag } from "@metreeca/core/language";
 import {
 	type Graph,
@@ -184,7 +184,7 @@ export function property<V>(subject: Some<Subject>, predicate: Predicate, object
 
 	if ( mapper ) {
 
-		return list(objects).flatMap(object => {
+		return some(objects).flatMap(object => {
 
 			const rdf = mapper(object);
 
@@ -196,8 +196,8 @@ export function property<V>(subject: Some<Subject>, predicate: Predicate, object
 
 	} else { // ;(cast) the non-embedded overload accepts only Some<Object>, so each object is a Term
 
-		return list(subject).flatMap(subject =>
-			list(objects).map(object => [subject, predicate, object as Object])
+		return some(subject).flatMap(subject =>
+			some(objects).map(object => [subject, predicate, object as Object])
 		);
 
 	}
@@ -283,8 +283,8 @@ export function data(data: Some<Scalar>, datatype?: Reference): readonly Typed[]
  * @returns The encoded tagged and plain literals
  */
 export function text(text: Some<{ [tag: Tag]: Some<string> }>): readonly (Tagged | Typed)[] {
-	return list(text).flatMap(text => Object.entries(text).flatMap(([tag, content]) =>
-		list(content).map(value => tag === "und" ? typed(value) : tagged(value, tag))
+	return some(text).flatMap(text => Object.entries(text).flatMap(([tag, content]) =>
+		some(content).map(value => tag === "und" ? typed(value) : tagged(value, tag))
 	));
 }
 
@@ -303,5 +303,5 @@ export function text(text: Some<{ [tag: Tag]: Some<string> }>): readonly (Tagged
  * @returns The encoded terms, one per source value
  */
 export function term<V, T extends Term>(source: Some<V>, encoder: (value: V) => T): readonly T[] {
-	return list(source).map(encoder);
+	return some(source).map(encoder);
 }
