@@ -29,11 +29,21 @@
  * @see {@link https://github.com/oxigraph/oxigraph/blob/main/js/README.md Oxigraph JavaScript/WASM API}
  */
 
-import { immutable } from "@metreeca/core/deep";
-import { error } from "@metreeca/core/report";
+import { error } from "@metreeca/core";
+import { immutable } from "@metreeca/core/structures";
+import { type IRI } from "@metreeca/core/resource";
 import { createScope, type Scope } from "@metreeca/core/scope";
-import type { Repository, Subject } from "@metreeca/wire-sparql";
-import { blank, type Reference, tagged, type Term, typed, variable } from "@metreeca/wire-sparql";
+import {
+	type Blank,
+	blank,
+	type Named,
+	named,
+	tagged,
+	type Term,
+	typed
+} from "@metreeca/trio";
+import type { Repository } from "@metreeca/wire-sparql";
+import { variable } from "@metreeca/wire-sparql";
 import { type Quad as OxyQuad, Store as OxyStore, type Term as OxyTerm } from "oxigraph";
 
 
@@ -60,7 +70,7 @@ export function createOxiRepository(): Repository {
 
 		select(query) {
 
-			const blanks = createScope();
+			const blanks = createScope(blank);
 
 			return Promise.resolve((store.query(query) as Map<string, OxyTerm>[]).map(row =>
 				Object.fromEntries(Array.from(row, ([k, v]) => [variable(k), term(v, blanks)]))
@@ -70,7 +80,7 @@ export function createOxiRepository(): Repository {
 
 		construct(query) {
 
-			const blanks = createScope();
+			const blanks = createScope(blank);
 
 			return Promise.resolve((store.query(query) as OxyQuad[]).map(quad =>
 				[subject(quad.subject, blanks), predicate(quad.predicate), object(quad.object, blanks)]
@@ -101,32 +111,32 @@ export function createOxiRepository(): Repository {
 	return repository;
 
 
-	function subject(value: OxyTerm, blanks: Scope): Subject {
-		return value.termType === "BlankNode" ? blank(blanks.resolve(value.value))
-			: value.termType === "NamedNode" ? value.value
+	function subject(value: OxyTerm, blanks: Scope<Blank>): Blank | Named {
+		return value.termType === "BlankNode" ? blanks.resolve(value.value)
+			: value.termType === "NamedNode" ? named(value.value)
 				: error(new Error(`unsupported subject term type <${value.termType}>`));
 	}
 
-	function predicate(value: OxyTerm): Reference {
-		return reference(value);
+	function predicate(value: OxyTerm): Named {
+		return named(name(value));
 	}
 
-	function object(value: OxyTerm, blanks: Scope): Term {
+	function object(value: OxyTerm, blanks: Scope<Blank>): Term {
 		return term(value, blanks);
 	}
 
 
-	function term(value: OxyTerm, blanks: Scope): Term {
-		return value.termType === "BlankNode" ? blank(blanks.resolve(value.value))
-			: value.termType === "NamedNode" ? value.value
+	function term(value: OxyTerm, blanks: Scope<Blank>): Term {
+		return value.termType === "BlankNode" ? blanks.resolve(value.value)
+			: value.termType === "NamedNode" ? named(value.value)
 				: value.termType === "Literal" && value.language ? tagged(value.value, value.language)
-					: value.termType === "Literal" ? typed(value.value, reference(value.datatype))
+					: value.termType === "Literal" ? typed(value.value, name(value.datatype))
 						: error(new Error(`unsupported term type <${value.termType}>`));
 	}
 
-	function reference(term: OxyTerm): Reference {
+	function name(term: OxyTerm): IRI {
 		return term.termType === "NamedNode" ? term.value
-			: error(new Error(`unsupported reference term type <${term.termType}>`));
+			: error(new Error(`unsupported named term type <${term.termType}>`));
 	}
 
 }

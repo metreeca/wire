@@ -1,13 +1,10 @@
 {
   "externalSymbolLinkMappings": {
-    "@metreeca/blue": {
-      "*": "https://metreeca.github.io/blue/"
-    },
     "@metreeca/core": {
       "*": "https://metreeca.github.io/core/"
     },
-    "@metreeca/qest": {
-      "*": "https://metreeca.github.io/qest/"
+    "@metreeca/trio": {
+      "*": "https://metreeca.github.io/trio/"
     }
   }
 }

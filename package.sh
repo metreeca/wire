@@ -15,4 +15,5 @@
 #
 
 npx link \
-  ../Core
+  ../Core \
+  ../Trio

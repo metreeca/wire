@@ -1,10 +1,14 @@
 {
   "entryPoints": [
-    "src/index.ts"
+    "src/index.ts",
+    "src/builder.ts"
   ],
   "externalSymbolLinkMappings": {
     "@metreeca/core": {
       "*": "https://metreeca.github.io/core/"
+    },
+    "@metreeca/trio": {
+      "*": "https://metreeca.github.io/trio/"
     },
     "typescript": {
       "Crypto.randomUUID": "https://developer.mozilla.org/en-US/docs/Web/API/Crypto/randomUUID"

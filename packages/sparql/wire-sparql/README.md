@@ -6,8 +6,8 @@ SPARQL 1.1 query language framework for [@metreeca/wire](https://github.com/metr
 
 Provides a uniform `Repository` interface for issuing SPARQL queries and updates against any backend (an embedded store,
 a remote endpoint, or a managed server), without binding application code to a specific store or client. It also bundles
-the building blocks for working with the data exchanged, such as an RDF term model, DSLs for composing SPARQL queries
-and RDF graphs, and codecs for RDF serialisations.
+combinators for composing SPARQL queries and updates from typed fragments, and exchanges data as the RDF terms and
+statements of [@metreeca/trio](https://github.com/metreeca/trio), which it pulls in as a direct dependency.
 
 # Installation
 
@@ -100,8 +100,9 @@ await repository.execute(async tx => {
 ## Implementing a Connector
 
 A backend connector implements the `Repository` interface (`ask`, `select`, `construct`, `update`, `execute`, and
-`close`), lifting native backend nodes into the shared term model with the `reference`, `tagged`, and `typed`
-constructors, and parsing or serialising RDF payloads with the `codecs/ntriples` module.
+`close`), lifting native backend nodes into the shared term model with the `named`, `tagged`, and `typed` constructors
+of [@metreeca/trio](https://github.com/metreeca/trio), and parsing or serialising RDF payloads with its
+`@metreeca/trio/ntriples` codec.
 
 A minimal connector has the shape:
 

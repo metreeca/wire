@@ -28,11 +28,11 @@
  * @see {@link https://www.w3.org/TR/sparql11-protocol/ SPARQL 1.1 Protocol}
  */
 
-import { immutable } from "@metreeca/core/deep";
+import { isError } from "@metreeca/core";
+import { immutable } from "@metreeca/core/structures";
 import { createFetch, type Problem } from "@metreeca/core/problem";
-import { message } from "@metreeca/core/report";
-import { media, type Repository, type SPARQL } from "@metreeca/wire-sparql";
-import { decodeNTriples } from "@metreeca/wire-sparql/codecs/ntriples";
+import { decodeNTriples, NTriples } from "@metreeca/trio/ntriples";
+import { type Repository, type SPARQL, SPARQLQuery, SPARQLResults, SPARQLUpdate } from "@metreeca/wire-sparql";
 import { decodeTuples, type SPARQLBindings, type SPARQLBoolean } from "./index.core.js";
 
 
@@ -54,7 +54,9 @@ import { decodeTuples, type SPARQLBindings, type SPARQLBoolean } from "./index.c
  *   status and a parse-failure `detail`
  * - A 2xx `construct` response whose `Content-Type` is not N-Triples rejects with a synthesised {@link Problem}
  * - A malformed result payload surfaces the decoder's own error: a `SyntaxError` for ill-formed N-Triples, or a
- *   `RangeError` for a malformed or unrecognised SPARQL Results JSON binding
+ *   `RangeError` for a term component either syntax admits but the RDF data model rejects (a relative IRI, a lexical
+ *   form holding an isolated surrogate, a non-conforming language tag), as well as for an unrecognised SPARQL Results
+ *   JSON binding
  *
  * @param options - Endpoint URLs and the optional `fetch` override
  * @param options.query - SPARQL query endpoint URL, for example `http://localhost:7200/repositories/my-repo`
@@ -88,7 +90,7 @@ export function createHTTPRepository({
 		async ask(query) {
 
 			const result = await json<SPARQLBoolean>(
-				await post(queryURL, media.query, query, media.results)
+				await post(queryURL, SPARQLQuery, query, SPARQLResults)
 			);
 
 			return result.boolean;
@@ -98,17 +100,17 @@ export function createHTTPRepository({
 		async select(query) {
 
 			return decodeTuples(await json<SPARQLBindings>(
-				await post(queryURL, media.query, query, media.results)
+				await post(queryURL, SPARQLQuery, query, SPARQLResults)
 			));
 
 		},
 
 		async construct(query) {
 
-			const response = await post(queryURL, media.query, query, media.ntriples);
+			const response = await post(queryURL, SPARQLQuery, query, NTriples);
 			const contentType = response.headers.get("Content-Type") ?? "";
 
-			if ( contentType.startsWith(media.ntriples) ) {
+			if ( contentType.startsWith(NTriples) ) {
 
 				return decodeNTriples(await response.text());
 
@@ -125,7 +127,7 @@ export function createHTTPRepository({
 
 		update(update) {
 
-			return post(updateURL, media.update, update);
+			return post(updateURL, SPARQLUpdate, update);
 
 		},
 
@@ -180,7 +182,7 @@ export function createHTTPRepository({
 
 			throw immutable<Problem>({
 				status: response.status,
-				detail: `malformed JSON response from <${response.url}>: ${message(e)}`
+				detail: `malformed JSON response from <${response.url}>: ${isError(e) ? e.message : String(e)}`
 			});
 
 		}

@@ -14,14 +14,20 @@
  * limitations under the License.
  */
 
+import {
+	blank as blankTerm,
+	named,
+	rdf,
+	tagged as taggedTerm,
+	typed as typedTerm
+} from "@metreeca/trio";
 import { describe, expect, it } from "vitest";
-import { escapeIRI, escapeString } from "./dsl.core.js";
 import {
 	abs,
 	add,
 	alt,
-	and,
 	anchor,
+	and,
 	ask,
 	blank,
 	bnode,
@@ -50,7 +56,6 @@ import {
 	isNotIn,
 	lcase,
 	limit,
-	literal,
 	md5,
 	minus,
 	minutes,
@@ -65,6 +70,8 @@ import {
 	optional,
 	or,
 	orderBy,
+	pattern,
+	patterns,
 	rand,
 	reduced,
 	reference,
@@ -73,25 +80,27 @@ import {
 	round,
 	seconds,
 	seq,
+	service,
 	sha1,
 	sha256,
 	sha384,
 	sha512,
-	service,
 	strafter,
 	strbefore,
 	strdt,
 	strends,
+	string,
 	strlang,
 	strlen,
 	strstarts,
-	string,
 	struuid,
 	sub,
 	substr,
 	tagged,
 	term,
 	timezone,
+	triple,
+	triples,
 	typed,
 	tz,
 	ucase,
@@ -105,7 +114,7 @@ import {
 	where,
 	witt,
 	year
-} from "./dsl.js";
+} from "./builder.js";
 
 
 describe("generators", () => {
@@ -964,6 +973,68 @@ describe("generators", () => {
 
 describe("serialisers", () => {
 
+	describe("patterns", () => {
+
+		it("should space-join the serialised patterns", async () => {
+			expect(patterns([
+				["?s", named("http://example.org/p"), "?o"],
+				["?s", named(rdf.type), "?t"]
+			])).toBe("?s <http://example.org/p> ?o . ?s a ?t .");
+		});
+
+		it("should render an empty sequence as the empty string", async () => {
+			expect(patterns([])).toBe("");
+		});
+
+	});
+
+	describe("pattern", () => {
+
+		it("should render variable positions verbatim", async () => {
+			expect(pattern(["?s", "?p", "?o"])).toBe("?s ?p ?o .");
+		});
+
+		it("should serialise ground positions", async () => {
+			expect(pattern([named("http://example.org/s"), named("http://example.org/p"), typedTerm("v")]))
+				.toBe("<http://example.org/s> <http://example.org/p> \"v\" .");
+		});
+
+		it("should abbreviate the rdf:type predicate as the a shorthand", async () => {
+			expect(pattern(["?s", named(rdf.type), "?o"])).toBe("?s a ?o .");
+		});
+
+	});
+
+	describe("triples", () => {
+
+		it("should space-join the serialised triples", async () => {
+			expect(triples([
+				[named("http://example.org/s"), named("http://example.org/p"), typedTerm("v")],
+				[named("http://example.org/s"), named(rdf.type), named("http://example.org/t")]
+			])).toBe("<http://example.org/s> <http://example.org/p> \"v\" ."
+				+" <http://example.org/s> a <http://example.org/t> .");
+		});
+
+		it("should render an empty sequence as the empty string", async () => {
+			expect(triples([])).toBe("");
+		});
+
+	});
+
+	describe("triple", () => {
+
+		it("should serialise a ground statement", async () => {
+			expect(triple([blankTerm("b0"), named("http://example.org/p"), named("http://example.org/o")]))
+				.toBe("_:b0 <http://example.org/p> <http://example.org/o> .");
+		});
+
+		it("should abbreviate the rdf:type predicate as the a shorthand", async () => {
+			expect(triple([named("http://example.org/s"), named(rdf.type), named("http://example.org/t")]))
+				.toBe("<http://example.org/s> a <http://example.org/t> .");
+		});
+
+	});
+
 	describe("anchor", () => {
 
 		it("should render a variable verbatim", async () => {
@@ -971,7 +1042,7 @@ describe("serialisers", () => {
 		});
 
 		it("should serialise a term", async () => {
-			expect(anchor("http://example.org/x")).toBe("<http://example.org/x>");
+			expect(anchor(named("http://example.org/x"))).toBe("<http://example.org/x>");
 		});
 
 	});
@@ -987,36 +1058,40 @@ describe("serialisers", () => {
 	describe("term", () => {
 
 		it("should serialise a blank node", async () => {
-			expect(term("_:b0")).toBe("_:b0");
+			expect(term(blankTerm("b0"))).toBe("_:b0");
 		});
 
 		it("should serialise an IRI reference", async () => {
-			expect(term("http://example.org/x")).toBe("<http://example.org/x>");
+			expect(term(named("http://example.org/x"))).toBe("<http://example.org/x>");
 		});
 
 		it("should serialise a language-tagged literal", async () => {
-			expect(term({ text: "hello", language: "en" })).toBe("\"hello\"@en");
+			expect(term(taggedTerm("hello", "en"))).toBe("\"hello\"@en");
 		});
 
 		it("should serialise a datatype-typed literal", async () => {
-			expect(term({ text: "42", datatype: "http://www.w3.org/2001/XMLSchema#integer" }))
+			expect(term(typedTerm("42", "http://www.w3.org/2001/XMLSchema#integer")))
 				.toBe("\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>");
 		});
 
 		it("should serialise a simple literal when datatype is absent", async () => {
-			expect(term({ text: "hello" })).toBe("\"hello\"");
+			expect(term(typedTerm("hello"))).toBe("\"hello\"");
 		});
 
 	});
 
 	describe("blank", () => {
 
-		it("should render the blank label verbatim", async () => {
-			expect(blank("_:b0")).toBe("_:b0");
+		it("should render a string label into a prefixed token", async () => {
+			expect(blank("b0")).toBe("_:b0");
+		});
+
+		it("should render a numeric label into a prefixed token", async () => {
+			expect(blank(0)).toBe("_:0");
 		});
 
 		it("should mint a fresh label when no argument is provided", async () => {
-			expect(blank()).toMatch(/^_:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+			expect(blank()).toMatch(/^_:[0-9a-f]{32}$/);
 		});
 
 		it("should mint a distinct label on each call", async () => {
@@ -1031,8 +1106,41 @@ describe("serialisers", () => {
 			expect(reference("http://example.org/x")).toBe("<http://example.org/x>");
 		});
 
-		it("should escape forbidden characters in IRI", async () => {
-			expect(reference("http://example.org/a b")).toBe("<http://example.org/a\\u0020b>");
+		it("should escape supplementary code points in IRI", async () => {
+			expect(reference("http://example.org/\u{1F600}")).toBe("<http://example.org/\\U0001F600>");
+		});
+
+		it.each([
+
+			{ label: "null", code: 0x00 },
+			{ label: "tab", code: 0x09 },
+			{ label: "line feed", code: 0x0A },
+			{ label: "space", code: 0x20 },
+			{ label: "double quote", code: 0x22 },
+			{ label: "less than", code: 0x3C },
+			{ label: "greater than", code: 0x3E },
+			{ label: "caret", code: 0x5E },
+			{ label: "backslash", code: 0x5C },
+			{ label: "backtick", code: 0x60 },
+			{ label: "open brace", code: 0x7B },
+			{ label: "pipe", code: 0x7C },
+			{ label: "close brace", code: 0x7D }
+
+		])("should reject $label, forbidden by the IRIREF production", async ({ code }) => {
+			expect(() => reference(`http://example.org/${String.fromCodePoint(code)}`)).toThrow(RangeError);
+		});
+
+		it("should reject an isolated surrogate", async () => {
+			expect(() => reference("http://example.org/\uD83D")).toThrow(RangeError);
+			expect(() => reference("http://example.org/\uDE00")).toThrow(RangeError);
+		});
+
+		it("should leave non-ASCII BMP characters unchanged", async () => {
+			expect(reference("http://example.org/é世")).toBe("<http://example.org/é世>");
+		});
+
+		it("should render a relative IRI verbatim", async () => {
+			expect(reference("/relative")).toBe("</relative>");
 		});
 
 		it("should mint fresh urn:uuid reference when no argument is provided", async () => {
@@ -1107,29 +1215,8 @@ describe("serialisers", () => {
 			expect(string("")).toBe("\"\"");
 		});
 
-	});
-
-	describe("literal", () => {
-
-		it("should produce simple literal in double quotes when type is omitted", async () => {
-			expect(literal("hello")).toBe("\"hello\"");
-		});
-
-		it("should produce simple literal in double quotes when type is xsd:string", async () => {
-			expect(literal("hello", "http://www.w3.org/2001/XMLSchema#string")).toBe("\"hello\"");
-		});
-
-		it("should dispatch to language-tagged form for BCP 47 tag", async () => {
-			expect(literal("hello", "en")).toBe("\"hello\"@en");
-		});
-
-		it("should dispatch to typed form for datatype IRI", async () => {
-			expect(literal("42", "http://www.w3.org/2001/XMLSchema#integer"))
-				.toBe("\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>");
-		});
-
-		it("should escape text in simple literal", async () => {
-			expect(literal("a\\b")).toBe("\"a\\\\b\"");
+		it("should reject an ill-formed lexical form", async () => {
+			expect(() => string("smile \uD83D")).toThrow(RangeError);
 		});
 
 	});
@@ -1142,6 +1229,14 @@ describe("serialisers", () => {
 
 		it("should escape text in language-tagged literal", async () => {
 			expect(tagged("say \"hello\"", "en")).toBe("\"say \\\"hello\\\"\"@en");
+		});
+
+		it("should reject an ill-formed lexical form", async () => {
+			expect(() => tagged("smile \uD83D", "en")).toThrow(RangeError);
+		});
+
+		it("should reject a malformed language tag", async () => {
+			expect(() => tagged("hello", "en \"@en . <a> <b> <c>")).toThrow(RangeError);
 		});
 
 	});
@@ -1158,104 +1253,12 @@ describe("serialisers", () => {
 				.toBe("\"a\\\\b\"^^<http://www.w3.org/2001/XMLSchema#integer>");
 		});
 
-	});
-
-});
-
-describe("escape", () => {
-
-	describe("escapeIRI", () => {
-
-		it("should escape forbidden characters with unicode escapes", async () => {
-			expect(escapeIRI("a b")).toBe("a\\u0020b");
+		it("should reject an ill-formed lexical form", async () => {
+			expect(() => typed("smile \uD83D")).toThrow(RangeError);
 		});
 
-		it("should escape control characters with unicode escapes", async () => {
-			expect(escapeIRI("a\tb")).toBe("a\\u0009b");
-		});
-
-		it("should escape backslash", async () => {
-			expect(escapeIRI("a\\b")).toBe("a\\u005Cb");
-		});
-
-		it("should escape angle brackets", async () => {
-			expect(escapeIRI("a<b>c")).toBe("a\\u003Cb\\u003Ec");
-		});
-
-		it("should escape double quote", async () => {
-			expect(escapeIRI("a\"b")).toBe("a\\u0022b");
-		});
-
-		it("should escape supplementary plane characters with uppercase form", async () => {
-			expect(escapeIRI("\u{1F600}")).toBe("\\U0001F600");
-		});
-
-		it("should leave printable ASCII unchanged", async () => {
-			expect(escapeIRI("http://example.org/x")).toBe("http://example.org/x");
-		});
-
-		it("should leave non-ASCII BMP characters unchanged", async () => {
-			expect(escapeIRI("é世")).toBe("é世");
-		});
-
-		it("should handle empty string", async () => {
-			expect(escapeIRI("")).toBe("");
-		});
-
-	});
-
-	describe("escapeString", () => {
-
-		it("should escape backslash", async () => {
-			expect(escapeString("a\\b")).toBe("a\\\\b");
-		});
-
-		it("should escape double quote", async () => {
-			expect(escapeString("say \"hello\"")).toBe("say \\\"hello\\\"");
-		});
-
-		it("should escape newline", async () => {
-			expect(escapeString("line1\nline2")).toBe("line1\\nline2");
-		});
-
-		it("should escape carriage return", async () => {
-			expect(escapeString("line1\rline2")).toBe("line1\\rline2");
-		});
-
-		it("should escape tab", async () => {
-			expect(escapeString("a\tb")).toBe("a\\tb");
-		});
-
-		it("should escape backspace", async () => {
-			expect(escapeString("a\bb")).toBe("a\\bb");
-		});
-
-		it("should escape form feed", async () => {
-			expect(escapeString("a\fb")).toBe("a\\fb");
-		});
-
-		it("should escape control characters with unicode escapes", async () => {
-			expect(escapeString("ab")).toBe("a\\u0001b");
-		});
-
-		it("should escape supplementary plane characters with uppercase form", async () => {
-			expect(escapeString("smile \u{1F600}")).toBe("smile \\U0001F600");
-		});
-
-		it("should leave printable ASCII unchanged", async () => {
-			expect(escapeString("Hello, World! 123")).toBe("Hello, World! 123");
-		});
-
-		it("should leave non-ASCII BMP characters unchanged", async () => {
-			expect(escapeString("é世")).toBe("é世");
-		});
-
-		it("should leave single quote unchanged", async () => {
-			expect(escapeString("it's")).toBe("it's");
-		});
-
-		it("should handle empty string", async () => {
-			expect(escapeString("")).toBe("");
+		it("should reject a malformed datatype IRI", async () => {
+			expect(() => typed("42", "http://example.org/a b")).toThrow(RangeError);
 		});
 
 	});

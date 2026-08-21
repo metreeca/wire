@@ -15,47 +15,128 @@
  */
 
 /**
- * DSL for SPARQL queries and updates.
+ * Builders for SPARQL queries and updates.
  *
  * Provides composable combinators that assemble SPARQL request strings from typed fragments: update operations, graph
  * patterns, property paths, expressions, aggregates, solution modifiers, and the serialisers that render RDF
  * {@link Term | terms} into their SPARQL lexical forms. Every combinator takes and returns {@link SPARQL} fragments, so
  * clauses nest by ordinary function composition into a complete query or update.
  *
+ * Term content is escaped wherever the grammar defines an escape and validated wherever it does not, so no value
+ * rendered through the serialisers can break out of the token carrying it.
+ *
+ * > [!WARNING]
+ * > Blank-node labels are the exception: `BLANK_NODE_LABEL` defines no escape and {@link blank} performs no check, so
+ * > a malformed label breaks the fragment carrying it rather than rendering as data.
+ *
+ * **Types**
+ *
+ * - {@link Mixed} — the spread-or-array argument shape accepted by the variadic combinators
+ *
+ * **Updates**
+ *
+ * - {@link update} — sequence operations into a single request
+ * - {@link deleet}, {@link insert} — ground and templated delete/insert operations
+ * - {@link witt}, {@link using}, {@link usingNamed} — target graph and update dataset
+ *
+ * **Queries**
+ *
+ * - {@link ask}, {@link select} — query forms
+ * - {@link all}, {@link distinct}, {@link reduced}, {@link as} — projection wildcard, modifiers, and aliases
+ * - {@link from}, {@link fromNamed} — query dataset
+ * - {@link groupBy}, {@link having}, {@link orderBy}, {@link asc}, {@link desc}, {@link limit},
+ *   {@link offset} — solution modifiers
+ *
+ * **Graph patterns**
+ *
+ * - {@link where} — query body and update solution source
+ * - {@link edge}, {@link group}, {@link fragment} — statements, blocks, and clause joining
+ * - {@link union}, {@link optional}, {@link minus}, {@link graph}, {@link service}, {@link values} — pattern algebra
+ * - {@link filter}, {@link bind} — constraints and in-body assignments
+ * - {@link nil} — the empty fragment, dropped wherever clauses are joined
+ *
+ * **Property paths**
+ *
+ * - {@link seq}, {@link alt}, {@link inv}, {@link star}, {@link plus}, {@link opt}, {@link none} — path operators
+ *
+ * **Expressions**
+ *
+ * - {@link not}, {@link and}, {@link or} — logical operators
+ * - {@link eq}, {@link ne}, {@link lt}, {@link gt}, {@link lte}, {@link gte} — comparison operators
+ * - {@link add}, {@link sub}, {@link mul}, {@link div} — arithmetic operators
+ * - {@link iif}, {@link coalesce}, {@link isBound}, {@link isIn}, {@link isNotIn}, {@link exists},
+ *   {@link nexists}, {@link call} — functional forms
+ *
+ * **Built-in functions**
+ *
+ * - {@link str}, {@link lang}, {@link datatype}, {@link isBlank}, {@link isIRI}, {@link isLiteral},
+ *   {@link isNumeric}, {@link sameTerm}, {@link iri}, {@link bnode}, {@link strdt}, {@link strlang}, {@link uuid},
+ *   {@link struuid} — RDF term functions
+ * - {@link strlen}, {@link substr}, {@link ucase}, {@link lcase}, {@link strstarts}, {@link strends},
+ *   {@link contains}, {@link strbefore}, {@link strafter}, {@link encodeForUri}, {@link concat},
+ *   {@link langMatches}, {@link regex}, {@link replace} — string functions
+ * - {@link abs}, {@link round}, {@link ceil}, {@link floor}, {@link rand} — numeric functions
+ * - {@link now}, {@link year}, {@link month}, {@link day}, {@link hours}, {@link minutes}, {@link seconds},
+ *   {@link timezone}, {@link tz} — temporal functions
+ * - {@link md5}, {@link sha1}, {@link sha256}, {@link sha384}, {@link sha512} — hash functions
+ *
+ * **Aggregates**
+ *
+ * - {@link count}, {@link sum}, {@link min}, {@link max}, {@link avg}, {@link sample},
+ *   {@link groupConcat} — aggregate expressions over grouped solutions
+ *
+ * **Serialisers**
+ *
+ * - {@link patterns}, {@link pattern}, {@link anchor}, {@link variable} — triple patterns and query variables
+ * - {@link triples}, {@link triple}, {@link term}, {@link blank}, {@link reference} — RDF statements and terms
+ * - {@link typed}, {@link tagged}, {@link boolean}, {@link number}, {@link string} — literals
+ *
+ * **Usage**
+ *
+ * Combinators nest as plain expressions, so a whole request is written as one composition:
+ *
+ * ```ts
+ * const product = variable("product"); // ?product, minted by the package entry module
+ * const name = variable("name");       // ?name
+ *
+ * const query = select([name],
+ *     where(
+ *         edge(product, reference("https://schema.org/name"), name),
+ *         filter(langMatches(lang(name), "en"))
+ *     ),
+ *     orderBy(asc(name)),
+ *     limit(10)
+ * );
+ * ```
+ *
  * @module
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/ SPARQL 1.1 Query Language}
  * @see {@link https://www.w3.org/TR/sparql11-update/ SPARQL 1.1 Update}
  * @see {@link https://www.w3.org/TR/rdf11-concepts/ RDF 1.1 Concepts}
- * @see {@link https://www.w3.org/TR/n-triples/ RDF 1.1 N-Triples}
  */
 
-import { type Identifier, isString } from "@metreeca/core";
+import { error, type Identifier, isString } from "@metreeca/core";
 import { map } from "@metreeca/core/combo";
 import { xsd } from "@metreeca/core/datatype";
 import { isTag, type Tag, type TagRange } from "@metreeca/core/language";
-import { escapeIRI, escapeString } from "./dsl.core.js";
-import {
-	type Blank,
-	isBlank as isBlankValue,
-	isReference,
-	isTagged,
-	isVariable,
-	type Pattern,
-	type Reference,
-	type SPARQL,
-	type Term,
-	type Triple,
-	type Variable
-} from "./index.js";
+import { type IRI, isIRI as isReference } from "@metreeca/core/resource";
+import { escape, isWellFormed } from "@metreeca/core/strings";
+import { rdf, type Term, type Triple } from "@metreeca/trio";
+import { type Pattern, type SPARQL, type Variable } from "./index.js";
 
 
 /**
- * The full `rdf:type` predicate IRI, expanded from the SPARQL `"a"` shorthand.
+ * Matches every character {@link reference} escapes within an IRIREF.
  *
- * @see {@link https://www.w3.org/TR/sparql11-query/#abbrevRdfType SPARQL `rdf:type` shorthand}
+ * Covers the supplementary code points above U+FFFF, the only characters an escape can carry into a SPARQL IRIREF:
+ * escapes are resolved into code points before parsing, and the characters the production forbids are not legal at
+ * that point in the grammar, so no escape can express them and {@link reference} rejects them instead.
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#codepointEscape SPARQL 1.1 §19.2 — Codepoint Escape Sequences}
  */
-const type: Reference = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+const IRIEscapePattern = /[\u{10000}-\u{10FFFF}]/gu;
+
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -70,7 +151,6 @@ const type: Reference = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 export type Mixed<T> = readonly (T | readonly T[])[];
 
 
-
 //// Updates (Update §3) ///////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -81,7 +161,7 @@ export type Mixed<T> = readonly (T | readonly T[])[];
  * produced by {@link nil}, are dropped before joining, so optional operations left out do not introduce redundant
  * separators.
  *
- * @param updates The update operations to sequence
+ * @param updates - The update operations to sequence
  *
  * @returns The `;`-separated SPARQL update request, excluding empty operations
  *
@@ -102,8 +182,9 @@ export function update(...updates: Mixed<SPARQL>): SPARQL {
  * > [!NOTE]
  * > Named `deleet` because `delete` is a reserved word.
  *
- * @param content The triples to remove: ground triples for `delete data`, or a triple template for `delete … where`
- * @param where The optional {@link where} clause selecting solutions to instantiate against; omit for a ground form
+ * @param content - The triples to remove: ground triples for `delete data`, or a triple template for `delete … where`
+ * @param where - The optional {@link builder.where | where} clause selecting solutions to instantiate against; omit
+ *     for a ground form
  *
  * @returns The SPARQL `DELETE` update
  *
@@ -124,8 +205,9 @@ export function deleet(content: SPARQL | readonly SPARQL[], where?: SPARQL): SPA
  * `content` template instantiates. Pass `content` as a single serialised block or a list of clauses joined into a
  * fragment.
  *
- * @param content The triples to add: ground triples for `insert data`, or a triple template for `insert … where`
- * @param where The optional {@link where} clause selecting solutions to instantiate against; omit for a ground form
+ * @param content - The triples to add: ground triples for `insert data`, or a triple template for `insert … where`
+ * @param where - The optional {@link builder.where | where} clause selecting solutions to instantiate against; omit
+ *     for a ground form
  *
  * @returns The SPARQL `INSERT` update
  *
@@ -144,9 +226,9 @@ export function insert(content: SPARQL | readonly SPARQL[], where?: SPARQL): SPA
  *
  * Prefixes the space-joined clauses with `with <graph>`, serialising `graph` via {@link reference} and setting it as
  * the default graph for both the template and the {@link where} pattern of the enclosed {@link deleet} or
- * {@link insert} operation, the way {@link graph} scopes a query pattern. Empty clauses, such as those produced by
- * {@link nil}, are dropped first; when none survives, the result is the empty fragment via {@link nil}, which callers
- * must guard against where an operation is required.
+ * {@link insert} operation, the way {@link builder.graph | graph} scopes a query pattern. Empty clauses, such as
+ * those produced by {@link nil}, are dropped first; when none survives, the result is the empty fragment via
+ * {@link nil}, which callers must guard against where an operation is required.
  *
  * > [!NOTE]
  * > Named `witt` because `with` is a reserved word.
@@ -156,15 +238,15 @@ export function insert(content: SPARQL | readonly SPARQL[], where?: SPARQL): SPA
  * > clause. It has no effect on the ground `delete data` and `insert data` forms, whose triples name their target
  * > graphs inline, so pass only template operations as `clauses`.
  *
- * @param graph The IRI {@link reference} of the target graph
- * @param clauses The update operation clauses to scope, typically a {@link deleet} or {@link insert} template followed
- *     by its {@link where} clause
+ * @param graph - The IRI {@link reference} of the target graph
+ * @param clauses - The update operation clauses to scope, typically a {@link deleet} or {@link insert} template
+ *     followed by its {@link where} clause
  *
  * @returns The SPARQL `WITH` update, or the empty fragment for no clauses
  *
  * @see {@link https://www.w3.org/TR/sparql11-update/#deleteInsert SPARQL 1.1 Update — Delete/Insert}
  */
-export function witt(graph: Reference, ...clauses: Mixed<SPARQL>): SPARQL {
+export function witt(graph: IRI, ...clauses: Mixed<SPARQL>): SPARQL {
 	return map(clauses.flat().filter(clause => clause !== ""), clauses =>
 		clauses.length === 0 ? nil() : `with ${reference(graph)} ${fragment(clauses)}`
 	);
@@ -179,13 +261,13 @@ export function witt(graph: Reference, ...clauses: Mixed<SPARQL>): SPARQL {
  * graphs, such as those produced by {@link nil}, are dropped first; an empty list yields the empty fragment, leaving
  * the dataset to the graph store's default.
  *
- * @param graphs The IRI {@link reference | references} of the default-graph sources
+ * @param graphs - The IRI {@link reference | references} of the default-graph sources
  *
  * @returns The space-joined SPARQL `USING` clauses, or the empty fragment for no graphs
  *
  * @see {@link https://www.w3.org/TR/sparql11-update/#deleteInsert SPARQL 1.1 Update — Delete/Insert}
  */
-export function using(...graphs: Mixed<Reference>): SPARQL {
+export function using(...graphs: Mixed<IRI>): SPARQL {
 	return map(graphs.flat().filter(graph => graph !== ""), graphs =>
 		graphs.length === 0 ? nil() : graphs.map(graph => `using ${reference(graph)}`).join(" ")
 	);
@@ -200,13 +282,13 @@ export function using(...graphs: Mixed<Reference>): SPARQL {
  * clause. Empty graphs, such as those produced by {@link nil}, are dropped first; an empty list yields the empty
  * fragment, adding no named graphs.
  *
- * @param graphs The IRI {@link reference | references} of the named graphs
+ * @param graphs - The IRI {@link reference | references} of the named graphs
  *
  * @returns The space-joined SPARQL `USING NAMED` clauses, or the empty fragment for no graphs
  *
  * @see {@link https://www.w3.org/TR/sparql11-update/#deleteInsert SPARQL 1.1 Update — Delete/Insert}
  */
-export function usingNamed(...graphs: Mixed<Reference>): SPARQL {
+export function usingNamed(...graphs: Mixed<IRI>): SPARQL {
 	return map(graphs.flat().filter(graph => graph !== ""), graphs =>
 		graphs.length === 0 ? nil() : graphs.map(graph => `using named ${reference(graph)}`).join(" ")
 	);
@@ -221,7 +303,7 @@ export function usingNamed(...graphs: Mixed<Reference>): SPARQL {
  * Prefixes the space-joined clauses with `ask`, producing a query that tests whether the graph pattern has any solution
  * and returns a boolean. Supply the pattern as a {@link where} clause.
  *
- * @param clauses The query clauses, typically a {@link where} clause
+ * @param clauses - The query clauses, typically a {@link where} clause
  *
  * @returns The SPARQL `ASK` query
  *
@@ -238,8 +320,8 @@ export function ask(...clauses: Mixed<SPARQL>): SPARQL {
  * expression, such as the {@link all} wildcard, or a list of projection variables and {@link as} aliases joined into a
  * fragment. Supply the graph pattern and solution modifiers as the trailing clauses.
  *
- * @param projection The result projection: a single expression, or a list of projection variables and aliases
- * @param clauses The query clauses, typically a {@link where} clause followed by solution modifiers
+ * @param projection - The result projection: a single expression, or a list of projection variables and aliases
+ * @param clauses - The query clauses, typically a {@link where} clause followed by solution modifiers
  *
  * @returns The SPARQL `SELECT` query
  *
@@ -256,7 +338,7 @@ export function select(projection: SPARQL | readonly SPARQL[], ...clauses: Mixed
  * deduplicating an aggregate's input, as in {@link count}. Empty expressions, such as those produced by {@link nil},
  * are dropped first; an empty list, or one leaving no expression, yields the bare `distinct` keyword.
  *
- * @param expressions The projection variables or aggregate argument to deduplicate
+ * @param expressions - The projection variables or aggregate argument to deduplicate
  *
  * @returns The `distinct` modifier
  *
@@ -275,7 +357,7 @@ export function distinct(...expressions: Mixed<SPARQL>): SPARQL {
  * alternative to {@link distinct}. Empty expressions, such as those produced by {@link nil}, are dropped first; an
  * empty list, or one leaving no expression, yields the bare `reduced` keyword.
  *
- * @param expressions The projection variables to permit deduplicating
+ * @param expressions - The projection variables to permit deduplicating
  *
  * @returns The `reduced` modifier
  *
@@ -305,8 +387,8 @@ export function all() {
  * `select` projection list, where it introduces a computed column. The unparenthesised assignment
  * form, binding a variable in the WHERE body instead, is {@link bind}.
  *
- * @param expression The expression to project
- * @param variable The result variable the expression is named as
+ * @param expression - The expression to project
+ * @param variable - The result variable the expression is named as
  *
  * @returns The parenthesised `(… as …)` projection alias
  *
@@ -326,13 +408,13 @@ export function as(expression: SPARQL, variable: SPARQL): SPARQL {
  * {@link nil}, are dropped first; an empty list yields the empty fragment, leaving the dataset to the endpoint's
  * default.
  *
- * @param graphs The IRI {@link reference | references} of the default-graph sources
+ * @param graphs - The IRI {@link reference | references} of the default-graph sources
  *
  * @returns The space-joined SPARQL `FROM` clauses, or the empty fragment for no graphs
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#specifyingDataset SPARQL 1.1 Specifying RDF Datasets}
  */
-export function from(...graphs: Mixed<Reference>): SPARQL {
+export function from(...graphs: Mixed<IRI>): SPARQL {
 	return map(graphs.flat().filter(graph => graph !== ""), graphs =>
 		graphs.length === 0 ? nil() : graphs.map(graph => `from ${reference(graph)}`).join(" ")
 	);
@@ -346,13 +428,13 @@ export function from(...graphs: Mixed<Reference>): SPARQL {
  * graphs. The clauses sit between the query projection and its {@link where} clause. Empty graphs, such as those
  * produced by {@link nil}, are dropped first; an empty list yields the empty fragment, adding no named graphs.
  *
- * @param graphs The IRI {@link reference | references} of the named graphs
+ * @param graphs - The IRI {@link reference | references} of the named graphs
  *
  * @returns The space-joined SPARQL `FROM NAMED` clauses, or the empty fragment for no graphs
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#specifyingDataset SPARQL 1.1 Specifying RDF Datasets}
  */
-export function fromNamed(...graphs: Mixed<Reference>): SPARQL {
+export function fromNamed(...graphs: Mixed<IRI>): SPARQL {
 	return map(graphs.flat().filter(graph => graph !== ""), graphs =>
 		graphs.length === 0 ? nil() : graphs.map(graph => `from named ${reference(graph)}`).join(" ")
 	);
@@ -366,7 +448,7 @@ export function fromNamed(...graphs: Mixed<Reference>): SPARQL {
  * expressions, such as those produced by {@link nil}, are dropped first; an empty list yields the empty fragment,
  * leaving the solutions ungrouped.
  *
- * @param expressions The grouping expressions
+ * @param expressions - The grouping expressions
  *
  * @returns The SPARQL `GROUP BY` clause, or the empty fragment for no expressions
  *
@@ -386,7 +468,7 @@ export function groupBy(...expressions: Mixed<SPARQL>): SPARQL {
  * portable across engines. Empty conditions, such as those produced by {@link nil}, are dropped first; an empty list
  * yields the empty fragment, leaving the grouped solutions unfiltered.
  *
- * @param conditions The boolean constraint expressions over the grouped solutions
+ * @param conditions - The boolean constraint expressions over the grouped solutions
  *
  * @returns The SPARQL `HAVING` clause, or the empty fragment for no conditions
  *
@@ -407,7 +489,7 @@ export function having(...conditions: Mixed<SPARQL>): SPARQL {
  * or an {@link asc} or {@link desc} wrapper. Empty conditions, such as those produced by {@link nil}, are dropped
  * first; an empty list yields the empty fragment, leaving the solution sequence unordered.
  *
- * @param conditions The order conditions, in priority order
+ * @param conditions - The order conditions, in priority order
  *
  * @returns The SPARQL `ORDER BY` clause, or the empty fragment for no conditions
  *
@@ -422,7 +504,7 @@ export function orderBy(...conditions: Mixed<SPARQL>): SPARQL {
 /**
  * Generates a SPARQL `asc()` ascending order condition.
  *
- * @param expression The ordering expression
+ * @param expression - The ordering expression
  *
  * @returns The `asc(…)` order condition
  *
@@ -435,7 +517,7 @@ export function asc(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `desc()` descending order condition.
  *
- * @param expression The ordering expression
+ * @param expression - The ordering expression
  *
  * @returns The `desc(…)` order condition
  *
@@ -450,7 +532,7 @@ export function desc(expression: SPARQL): SPARQL {
  *
  * A `value` of `0` yields the empty fragment, leaving the number of solutions unbounded.
  *
- * @param value The maximum number of solutions to return
+ * @param value - The maximum number of solutions to return
  *
  * @returns The SPARQL `LIMIT` clause, or the empty fragment for a `value` of `0`
  *
@@ -465,7 +547,7 @@ export function limit(value: number): SPARQL {
  *
  * A `value` of `0` yields the empty fragment, skipping no leading solutions.
  *
- * @param value The number of leading solutions to skip
+ * @param value - The number of leading solutions to skip
  *
  * @returns The SPARQL `OFFSET` clause, or the empty fragment for a `value` of `0`
  *
@@ -486,7 +568,7 @@ export function offset(value: number): SPARQL {
  * such as those produced by {@link nil}, are dropped first; when none survives, the result is the empty fragment via
  * {@link nil}, which callers must guard against where a body is required.
  *
- * @param clauses The graph pattern clauses forming the query body
+ * @param clauses - The graph pattern clauses forming the query body
  *
  * @returns The SPARQL `WHERE` clause, or the empty fragment for no clauses
  *
@@ -508,7 +590,7 @@ export function where(...clauses: Mixed<SPARQL>): SPARQL {
  * as-is, while several are wrapped in {@link group | groups} and joined with `union`. When none survives, the result
  * is the empty fragment via {@link nil}, which callers must guard against where a pattern is required.
  *
- * @param clauses The graph pattern clauses to combine
+ * @param clauses - The graph pattern clauses to combine
  *
  * @returns The SPARQL `UNION` pattern
  *
@@ -529,7 +611,7 @@ export function union(...clauses: Mixed<SPARQL>): SPARQL {
  * when none survives, the result is the empty fragment via {@link nil}, which callers must guard against where a
  * matching pattern is required.
  *
- * @param clauses The graph pattern clauses to wrap
+ * @param clauses - The graph pattern clauses to wrap
  *
  * @returns The SPARQL `OPTIONAL` group pattern, or the empty fragment for no clauses
  *
@@ -547,7 +629,7 @@ export function optional(...clauses: Mixed<SPARQL>): SPARQL {
  * Empty clauses, such as those produced by {@link nil}, are dropped first; when none survives, the result is the empty
  * fragment via {@link nil}, which callers must guard against where a pattern is required.
  *
- * @param clauses The graph pattern clauses to wrap
+ * @param clauses - The graph pattern clauses to wrap
  *
  * @returns The braced SPARQL group pattern, or the empty fragment for no clauses
  *
@@ -566,7 +648,7 @@ export function group(...clauses: Mixed<SPARQL>): SPARQL {
  * pattern. Empty clauses, such as those produced by {@link nil}, are dropped first; when none survives, the result is
  * the empty fragment via {@link nil}, which callers must guard against where a pattern is required.
  *
- * @param clauses The graph pattern clauses to subtract
+ * @param clauses - The graph pattern clauses to subtract
  *
  * @returns The SPARQL `MINUS` pattern, or the empty fragment for no clauses
  *
@@ -586,8 +668,8 @@ export function minus(...clauses: Mixed<SPARQL>): SPARQL {
  * dropped first; when none survives, the result is the empty fragment via {@link nil}, which callers must guard against
  * where a pattern is required.
  *
- * @param name The serialised graph name: a variable or an IRI reference
- * @param clauses The graph pattern clauses to scope
+ * @param name - The serialised graph name: a variable or an IRI reference
+ * @param clauses - The graph pattern clauses to scope
  *
  * @returns The SPARQL `GRAPH` block, or the empty fragment for no clauses
  *
@@ -607,8 +689,8 @@ export function graph(name: SPARQL, ...clauses: Mixed<SPARQL>): SPARQL {
  * first; when none survives, the result is the empty fragment via {@link nil}, which callers must guard against where a
  * pattern is required.
  *
- * @param endpoint The serialised endpoint: a variable or an IRI reference
- * @param clauses The graph pattern clauses to delegate
+ * @param endpoint - The serialised endpoint: a variable or an IRI reference
+ * @param clauses - The graph pattern clauses to delegate
  *
  * @returns The SPARQL `SERVICE` block, or the empty fragment for no clauses
  *
@@ -629,8 +711,8 @@ export function service(endpoint: SPARQL, ...clauses: Mixed<SPARQL>): SPARQL {
  * are dropped before joining, so a position marked unbound must use `undef` rather than an empty fragment to keep rows
  * aligned with the variable list.
  *
- * @param variables The serialised variables bound by the block
- * @param rows The value rows, each a list of serialised terms positionally aligned with `variables`
+ * @param variables - The serialised variables bound by the block
+ * @param rows - The value rows, each a list of serialised terms positionally aligned with `variables`
  *
  * @returns The SPARQL `VALUES` block
  *
@@ -648,7 +730,7 @@ export function values(variables: readonly SPARQL[], rows: readonly (readonly SP
  * Empty clauses, such as those produced by {@link nil}, are dropped before joining, so optional clauses left out do not
  * introduce redundant spaces.
  *
- * @param clauses The clauses to join
+ * @param clauses - The clauses to join
  *
  * @returns The space-joined fragment, excluding empty clauses
  */
@@ -662,9 +744,9 @@ export function fragment(...clauses: Mixed<SPARQL>): SPARQL {
  * The shared primitive behind {@link triple} and {@link pattern}: space-joins three already-serialised {@link SPARQL}
  * terms and appends the statement terminator. Callers render each position to its SPARQL form before passing it in.
  *
- * @param subject The serialised subject term
- * @param predicate The serialised predicate term
- * @param object The serialised object term
+ * @param subject - The serialised subject term
+ * @param predicate - The serialised predicate term
+ * @param object - The serialised object term
  *
  * @returns The `subject predicate object .` statement
  *
@@ -677,7 +759,7 @@ export function edge(subject: SPARQL, predicate: SPARQL, object: SPARQL): SPARQL
 /**
  * Generates a SPARQL `FILTER` constraint.
  *
- * @param constraint The boolean constraint expression to wrap
+ * @param constraint - The boolean constraint expression to wrap
  *
  * @returns The SPARQL `FILTER` constraint
  *
@@ -694,8 +776,8 @@ export function filter(constraint: SPARQL): SPARQL {
  * appears, so subsequent patterns and filters can reference it. The projection-list counterpart,
  * naming a computed `select` column, is {@link as}.
  *
- * @param expression The expression to assign
- * @param variable The variable the expression is bound to
+ * @param expression - The expression to assign
+ * @param variable - The variable the expression is bound to
  *
  * @returns The `bind(… as …)` clause
  *
@@ -724,7 +806,7 @@ export function nil(): SPARQL {
  * than an {@link alt | alternative}, so it nests inside one without parentheses. Empty elements, such as those produced
  * by {@link nil}, are dropped first, and a single surviving element is returned unchanged.
  *
- * @param paths The path elements to chain, in traversal order
+ * @param paths - The path elements to chain, in traversal order
  *
  * @returns The `/`-joined sequence path, excluding empty elements
  *
@@ -741,7 +823,7 @@ export function seq(...paths: Mixed<SPARQL>): SPARQL {
  * operator, it admits {@link seq | sequences} as elements without parentheses. Empty elements, such as those produced
  * by {@link nil}, are dropped first, and a single surviving element is returned unchanged.
  *
- * @param paths The alternative path elements
+ * @param paths - The alternative path elements
  *
  * @returns The `|`-joined alternative path, excluding empty elements
  *
@@ -757,7 +839,7 @@ export function alt(...paths: Mixed<SPARQL>): SPARQL {
  * Prefixes the path with `^`, traversing it from object to subject. The operand must be a path primary, such as an IRI
  * {@link reference} or a parenthesised path, so the inverse binds to the whole element.
  *
- * @param path The path element to invert
+ * @param path - The path element to invert
  *
  * @returns The `^`-prefixed inverse path
  *
@@ -773,7 +855,7 @@ export function inv(path: SPARQL): SPARQL {
  * Suffixes the path with `*`, matching the element traversed any number of times, the zero-length path included. The
  * operand must be a path primary so the quantifier binds to the whole element.
  *
- * @param path The path element to repeat
+ * @param path - The path element to repeat
  *
  * @returns The `*`-suffixed path
  *
@@ -789,7 +871,7 @@ export function star(path: SPARQL): SPARQL {
  * Suffixes the path with `+`, matching the element traversed at least once. The operand must be a path primary so the
  * quantifier binds to the whole element.
  *
- * @param path The path element to repeat
+ * @param path - The path element to repeat
  *
  * @returns The `+`-suffixed path
  *
@@ -805,7 +887,7 @@ export function plus(path: SPARQL): SPARQL {
  * Suffixes the path with `?`, matching the element traversed at most once. The operand must be a path primary so the
  * quantifier binds to the whole element.
  *
- * @param path The path element to make optional
+ * @param path - The path element to make optional
  *
  * @returns The `?`-suffixed path
  *
@@ -822,7 +904,7 @@ export function opt(path: SPARQL): SPARQL {
  * reverse direction. Empty predicates, such as those produced by {@link nil}, are dropped first; a single surviving
  * predicate renders as `!pred`, while several render as the parenthesised `!(a|b)` form.
  *
- * @param predicates The forbidden predicates, each an IRI reference or the inverse of one
+ * @param predicates - The forbidden predicates, each an IRI reference or the inverse of one
  *
  * @returns The `!`-prefixed none property set
  *
@@ -843,7 +925,7 @@ export function none(...predicates: Mixed<SPARQL>): SPARQL {
  * Parenthesises the operand so the negation binds the whole expression regardless of its internal
  * operator precedence.
  *
- * @param condition The boolean expression to negate
+ * @param condition - The boolean expression to negate
  *
  * @returns The parenthesised `!(…)` negation
  *
@@ -861,7 +943,7 @@ export function not(condition: SPARQL): SPARQL {
  * dropped first; a single surviving operand is returned unchanged, and no surviving operand yields the
  * empty fragment, which callers must guard against where a constraint is required.
  *
- * @param conditions The boolean expressions to conjoin
+ * @param conditions - The boolean expressions to conjoin
  *
  * @returns The `&&`-joined conjunction, excluding empty operands
  *
@@ -879,7 +961,7 @@ export function and(...conditions: Mixed<SPARQL>): SPARQL {
  * first; a single surviving operand is returned unchanged, and no surviving operand yields the empty
  * fragment, which callers must guard against where a constraint is required.
  *
- * @param conditions The boolean expressions to disjoin
+ * @param conditions - The boolean expressions to disjoin
  *
  * @returns The `||`-joined disjunction, excluding empty operands
  *
@@ -895,8 +977,8 @@ export function or(...conditions: Mixed<SPARQL>): SPARQL {
 /**
  * Generates a SPARQL equality (`=`) comparison.
  *
- * @param x The left operand expression
- * @param y The right operand expression
+ * @param x - The left operand expression
+ * @param y - The right operand expression
  *
  * @returns The `=` comparison expression
  *
@@ -909,8 +991,8 @@ export function eq(x: SPARQL, y: SPARQL): SPARQL {
 /**
  * Generates a SPARQL inequality (`!=`) comparison.
  *
- * @param x The left operand expression
- * @param y The right operand expression
+ * @param x - The left operand expression
+ * @param y - The right operand expression
  *
  * @returns The `!=` comparison expression
  *
@@ -923,8 +1005,8 @@ export function ne(x: SPARQL, y: SPARQL): SPARQL {
 /**
  * Generates a SPARQL greater-than (`>`) comparison.
  *
- * @param x The left operand expression
- * @param y The right operand expression
+ * @param x - The left operand expression
+ * @param y - The right operand expression
  *
  * @returns The `>` comparison expression
  *
@@ -937,8 +1019,8 @@ export function gt(x: SPARQL, y: SPARQL): SPARQL {
 /**
  * Generates a SPARQL less-than (`<`) comparison.
  *
- * @param x The left operand expression
- * @param y The right operand expression
+ * @param x - The left operand expression
+ * @param y - The right operand expression
  *
  * @returns The `<` comparison expression
  *
@@ -951,8 +1033,8 @@ export function lt(x: SPARQL, y: SPARQL): SPARQL {
 /**
  * Generates a SPARQL greater-than-or-equal (`>=`) comparison.
  *
- * @param x The left operand expression
- * @param y The right operand expression
+ * @param x - The left operand expression
+ * @param y - The right operand expression
  *
  * @returns The `>=` comparison expression
  *
@@ -965,8 +1047,8 @@ export function gte(x: SPARQL, y: SPARQL): SPARQL {
 /**
  * Generates a SPARQL less-than-or-equal (`<=`) comparison.
  *
- * @param x The left operand expression
- * @param y The right operand expression
+ * @param x - The left operand expression
+ * @param y - The right operand expression
  *
  * @returns The `<=` comparison expression
  *
@@ -984,8 +1066,8 @@ export function lte(x: SPARQL, y: SPARQL): SPARQL {
  *
  * Parenthesises the operands so the sum binds as a unit regardless of the surrounding operator precedence.
  *
- * @param x The left operand expression
- * @param y The right operand expression
+ * @param x - The left operand expression
+ * @param y - The right operand expression
  *
  * @returns The parenthesised `(… + …)` sum
  *
@@ -1000,8 +1082,8 @@ export function add(x: SPARQL, y: SPARQL): SPARQL {
  *
  * Parenthesises the operands so the difference binds as a unit regardless of the surrounding operator precedence.
  *
- * @param x The left operand expression
- * @param y The right operand expression
+ * @param x - The left operand expression
+ * @param y - The right operand expression
  *
  * @returns The parenthesised `(… - …)` difference
  *
@@ -1016,8 +1098,8 @@ export function sub(x: SPARQL, y: SPARQL): SPARQL {
  *
  * Parenthesises the operands so the product binds as a unit regardless of the surrounding operator precedence.
  *
- * @param x The left operand expression
- * @param y The right operand expression
+ * @param x - The left operand expression
+ * @param y - The right operand expression
  *
  * @returns The parenthesised `(… * …)` product
  *
@@ -1032,8 +1114,8 @@ export function mul(x: SPARQL, y: SPARQL): SPARQL {
  *
  * Parenthesises the operands so the quotient binds as a unit regardless of the surrounding operator precedence.
  *
- * @param x The left operand (dividend) expression
- * @param y The right operand (divisor) expression
+ * @param x - The left operand (dividend) expression
+ * @param y - The right operand (divisor) expression
  *
  * @returns The parenthesised `(… / …)` quotient
  *
@@ -1056,9 +1138,9 @@ export function div(x: SPARQL, y: SPARQL): SPARQL {
  * > [!NOTE]
  * > Named `iif` because `if` is a reserved word.
  *
- * @param condition The boolean test expression
- * @param then The expression selected when `condition` evaluates to `true`
- * @param otherwise The expression selected when `condition` evaluates to `false`
+ * @param condition - The boolean test expression
+ * @param then - The expression selected when `condition` evaluates to `true`
+ * @param otherwise - The expression selected when `condition` evaluates to `false`
  *
  * @returns The `if(…)` conditional expression
  *
@@ -1076,7 +1158,7 @@ export function iif(condition: SPARQL, then: SPARQL, otherwise: SPARQL): SPARQL 
  * fallback where an inner expression may be unbound or out of domain. Empty argument expressions, such
  * as those produced by {@link nil}, are dropped before joining.
  *
- * @param expressions The candidate expressions, in priority order
+ * @param expressions - The candidate expressions, in priority order
  *
  * @returns The `coalesce(…)` call
  *
@@ -1093,7 +1175,7 @@ export function coalesce(...expressions: Mixed<SPARQL>): SPARQL {
  * distinguishing a present value from an absent one, for example over the unmatched side of an
  * {@link optional} pattern.
  *
- * @param expression The variable expression to test
+ * @param expression - The variable expression to test
  *
  * @returns The `bound()` test
  *
@@ -1111,8 +1193,8 @@ export function isBound(expression: SPARQL): SPARQL {
  * `in ()`, which is always `false`, so callers that treat an empty set as unconstrained must guard the
  * call.
  *
- * @param expression The expression to test
- * @param options The candidate value expressions
+ * @param expression - The expression to test
+ * @param options - The candidate value expressions
  *
  * @returns The `… in (…)` membership test
  *
@@ -1130,8 +1212,8 @@ export function isIn(expression: SPARQL, options: readonly SPARQL[]): SPARQL {
  * first; an empty option list renders `not in ()`, which is always `true`, so callers that treat an
  * empty set as unconstrained must guard the call.
  *
- * @param expression The expression to test
- * @param options The candidate value expressions
+ * @param expression - The expression to test
+ * @param options - The candidate value expressions
  *
  * @returns The `… not in (…)` non-membership test
  *
@@ -1149,7 +1231,7 @@ export function isNotIn(expression: SPARQL, options: readonly SPARQL[]): SPARQL 
  * a single group. Empty clauses, such as those produced by {@link nil}, are dropped first; when none survives, the
  * result is the empty fragment via {@link nil}, which callers must guard against where a pattern is required.
  *
- * @param patterns The graph pattern clauses to test for a match
+ * @param patterns - The graph pattern clauses to test for a match
  *
  * @returns The `exists { … }` test, or the empty fragment for no patterns
  *
@@ -1169,7 +1251,7 @@ export function exists(...patterns: Mixed<SPARQL>): SPARQL {
  * produced by {@link nil}, are dropped first; when none survives, the result is the empty fragment via {@link nil},
  * which callers must guard against where a pattern is required.
  *
- * @param patterns The graph pattern clauses to test for absence
+ * @param patterns - The graph pattern clauses to test for absence
  *
  * @returns The `not exists { … }` test, or the empty fragment for no patterns
  *
@@ -1189,8 +1271,8 @@ export function nexists(...patterns: Mixed<SPARQL>): SPARQL {
  * those produced by {@link nil}, are dropped first. The name is emitted verbatim, so the caller upholds
  * the lowercase generated-token convention.
  *
- * @param fn The SPARQL function name
- * @param args The argument expressions, in order
+ * @param fn - The SPARQL function name
+ * @param args - The argument expressions, in order
  *
  * @returns The `fn(…)` call
  *
@@ -1209,7 +1291,7 @@ export function call(fn: Identifier, ...args: Mixed<SPARQL>): SPARQL {
  * Drops the language tag or datatype of a literal and returns its lexical string; over an IRI it
  * returns the IRI string.
  *
- * @param expression The expression evaluating to the term to render
+ * @param expression - The expression evaluating to the term to render
  *
  * @returns The `str()` call
  *
@@ -1225,7 +1307,7 @@ export function str(expression: SPARQL): SPARQL {
  * Returns the BCP 47 language tag of a language-tagged literal, or the empty string for a literal
  * carrying no tag.
  *
- * @param expression The expression evaluating to the literal to inspect
+ * @param expression - The expression evaluating to the literal to inspect
  *
  * @returns The `lang()` call
  *
@@ -1241,7 +1323,7 @@ export function lang(expression: SPARQL): SPARQL {
  * Returns the datatype IRI of a typed literal, `xsd:string` for a plain literal, and `rdf:langString`
  * for a language-tagged one; raises on a non-literal term.
  *
- * @param expression The expression evaluating to the literal to inspect
+ * @param expression - The expression evaluating to the literal to inspect
  *
  * @returns The `datatype()` call
  *
@@ -1257,7 +1339,7 @@ export function datatype(expression: SPARQL): SPARQL {
  * Evaluates to `true` when the term is a blank node, `false` for an IRI or literal. Emitted lowercase per the
  * generated-query convention (SPARQL function names are case-insensitive).
  *
- * @param expression The term expression to test
+ * @param expression - The term expression to test
  *
  * @returns The `isblank()` test
  *
@@ -1273,7 +1355,7 @@ export function isBlank(expression: SPARQL): SPARQL {
  * Evaluates to `true` when the term is an IRI, `false` for a literal or blank node. Emitted lowercase
  * per the generated-query convention (SPARQL function names are case-insensitive).
  *
- * @param expression The term expression to test
+ * @param expression - The term expression to test
  *
  * @returns The `isiri()` test
  *
@@ -1289,7 +1371,7 @@ export function isIRI(expression: SPARQL): SPARQL {
  * Evaluates to `true` when the term is an RDF literal, `false` for an IRI or blank node. Emitted
  * lowercase per the generated-query convention (SPARQL function names are case-insensitive).
  *
- * @param expression The term expression to test
+ * @param expression - The term expression to test
  *
  * @returns The `isliteral()` test
  *
@@ -1305,7 +1387,7 @@ export function isLiteral(expression: SPARQL): SPARQL {
  * Evaluates to `true` when the term is a numeric literal, `false` for any other term. Emitted lowercase per the
  * generated-query convention (SPARQL function names are case-insensitive).
  *
- * @param expression The term expression to test
+ * @param expression - The term expression to test
  *
  * @returns The `isnumeric()` test
  *
@@ -1322,8 +1404,8 @@ export function isNumeric(expression: SPARQL): SPARQL {
  * comparison of {@link eq}: literals match only on identical lexical form and datatype or language tag. Emitted
  * lowercase per the generated-query convention.
  *
- * @param x The left term expression
- * @param y The right term expression
+ * @param x - The left term expression
+ * @param y - The right term expression
  *
  * @returns The `sameterm()` test
  *
@@ -1339,7 +1421,7 @@ export function sameTerm(x: SPARQL, y: SPARQL): SPARQL {
  * Resolves the argument's lexical form against the query base IRI where relative, returning an IRI term; over an IRI
  * argument it returns the IRI unchanged.
  *
- * @param expression The expression evaluating to the IRI string to construct
+ * @param expression - The expression evaluating to the IRI string to construct
  *
  * @returns The `iri()` call
  *
@@ -1355,7 +1437,7 @@ export function iri(expression: SPARQL): SPARQL {
  * Without an argument, mints a fresh blank node distinct on each call. With a string-valued `expression`, produces a
  * blank node correlated to that string within the solution, so equal arguments yield the same node.
  *
- * @param expression The expression correlating minted nodes within a solution, or omitted to mint a fresh node
+ * @param expression - The expression correlating minted nodes within a solution, or omitted to mint a fresh node
  *
  * @returns The `bnode()` call
  *
@@ -1370,8 +1452,8 @@ export function bnode(expression?: SPARQL): SPARQL {
  *
  * Pairs the lexical form of `expression` with the `datatype` IRI, producing a typed literal.
  *
- * @param expression The expression evaluating to the lexical form
- * @param datatype The expression evaluating to the datatype IRI, typically a {@link reference}
+ * @param expression - The expression evaluating to the lexical form
+ * @param datatype - The expression evaluating to the datatype IRI, typically a {@link reference}
  *
  * @returns The `strdt()` call
  *
@@ -1386,8 +1468,8 @@ export function strdt(expression: SPARQL, datatype: SPARQL): SPARQL {
  *
  * Pairs the lexical form of `expression` with the `language` tag, producing a language-tagged string literal.
  *
- * @param expression The expression evaluating to the lexical form
- * @param language The expression evaluating to the language tag, typically a {@link literal}
+ * @param expression - The expression evaluating to the lexical form
+ * @param language - The expression evaluating to the language tag, typically a {@link string}
  *
  * @returns The `strlang()` call
  *
@@ -1425,7 +1507,7 @@ export function struuid(): SPARQL {
 /**
  * Generates a SPARQL `strlen()` call returning a string's length.
  *
- * @param expression The expression evaluating to the string to measure
+ * @param expression - The expression evaluating to the string to measure
  *
  * @returns The `strlen()` call, yielding the length in characters
  *
@@ -1441,9 +1523,9 @@ export function strlen(expression: SPARQL): SPARQL {
  * Returns the substring of `source` starting at the 1-based `starting` position; with `length`, limits the result to
  * that many characters, otherwise runs to the end.
  *
- * @param source The expression evaluating to the source string
- * @param starting The expression evaluating to the 1-based start position
- * @param length The expression evaluating to the maximum length, or omitted to run to the end
+ * @param source - The expression evaluating to the source string
+ * @param starting - The expression evaluating to the 1-based start position
+ * @param length - The expression evaluating to the maximum length, or omitted to run to the end
  *
  * @returns The `substr()` call
  *
@@ -1456,7 +1538,7 @@ export function substr(source: SPARQL, starting: SPARQL, length?: SPARQL): SPARQ
 /**
  * Generates a SPARQL `ucase()` call upper-casing a string.
  *
- * @param expression The expression evaluating to the string to upper-case
+ * @param expression - The expression evaluating to the string to upper-case
  *
  * @returns The `ucase()` call
  *
@@ -1469,7 +1551,7 @@ export function ucase(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `lcase()` call lower-casing a string.
  *
- * @param expression The expression evaluating to the string to lower-case
+ * @param expression - The expression evaluating to the string to lower-case
  *
  * @returns The `lcase()` call
  *
@@ -1484,8 +1566,8 @@ export function lcase(expression: SPARQL): SPARQL {
  *
  * Evaluates to `true` when `source` starts with `prefix`.
  *
- * @param source The expression evaluating to the string to test
- * @param prefix The expression evaluating to the candidate prefix
+ * @param source - The expression evaluating to the string to test
+ * @param prefix - The expression evaluating to the candidate prefix
  *
  * @returns The `strstarts()` call
  *
@@ -1500,8 +1582,8 @@ export function strstarts(source: SPARQL, prefix: SPARQL): SPARQL {
  *
  * Evaluates to `true` when `source` ends with `suffix`.
  *
- * @param source The expression evaluating to the string to test
- * @param suffix The expression evaluating to the candidate suffix
+ * @param source - The expression evaluating to the string to test
+ * @param suffix - The expression evaluating to the candidate suffix
  *
  * @returns The `strends()` call
  *
@@ -1516,8 +1598,8 @@ export function strends(source: SPARQL, suffix: SPARQL): SPARQL {
  *
  * Evaluates to `true` when `source` contains `substring`.
  *
- * @param source The expression evaluating to the string to search
- * @param substring The expression evaluating to the substring to find
+ * @param source - The expression evaluating to the string to search
+ * @param substring - The expression evaluating to the substring to find
  *
  * @returns The `contains()` call
  *
@@ -1533,8 +1615,8 @@ export function contains(source: SPARQL, substring: SPARQL): SPARQL {
  * Returns the portion of `source` preceding the first occurrence of `substring`, or the empty string when `substring`
  * is absent.
  *
- * @param source The expression evaluating to the source string
- * @param substring The expression evaluating to the delimiting substring
+ * @param source - The expression evaluating to the source string
+ * @param substring - The expression evaluating to the delimiting substring
  *
  * @returns The `strbefore()` call
  *
@@ -1550,8 +1632,8 @@ export function strbefore(source: SPARQL, substring: SPARQL): SPARQL {
  * Returns the portion of `source` following the first occurrence of `substring`, or the empty string when `substring`
  * is absent.
  *
- * @param source The expression evaluating to the source string
- * @param substring The expression evaluating to the delimiting substring
+ * @param source - The expression evaluating to the source string
+ * @param substring - The expression evaluating to the delimiting substring
  *
  * @returns The `strafter()` call
  *
@@ -1566,7 +1648,7 @@ export function strafter(source: SPARQL, substring: SPARQL): SPARQL {
  *
  * Percent-encodes `expression` for safe inclusion in a URI path segment.
  *
- * @param expression The expression evaluating to the string to encode
+ * @param expression - The expression evaluating to the string to encode
  *
  * @returns The `encode_for_uri()` call
  *
@@ -1582,7 +1664,7 @@ export function encodeForUri(expression: SPARQL): SPARQL {
  * Concatenates the arguments left to right into a single string. Empty argument expressions, such as those produced by
  * {@link nil}, are dropped before joining.
  *
- * @param expressions The expressions evaluating to the strings to join, in order
+ * @param expressions - The expressions evaluating to the strings to join, in order
  *
  * @returns The `concat()` call
  *
@@ -1599,15 +1681,15 @@ export function concat(...expressions: Mixed<SPARQL>): SPARQL {
  * or extends it by a subtag. The `range` is a basic RFC 4647 language range: a sequence of subtags or
  * the standalone `*` wildcard. Emitted lowercase per the generated-query convention.
  *
- * @param expression The expression evaluating to the language tag to test, typically a {@link lang} call
- * @param range The basic RFC 4647 language range to match against
+ * @param expression - The expression evaluating to the language tag to test, typically a {@link lang} call
+ * @param range - The basic RFC 4647 language range to match against
  *
  * @returns The `langmatches()` call
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#func-langMatches SPARQL 1.1 langMatches}
  */
 export function langMatches(expression: SPARQL, range: TagRange): SPARQL {
-	return `langmatches(${expression}, ${literal(range)})`;
+	return `langmatches(${expression}, ${string(range)})`;
 }
 
 /**
@@ -1616,9 +1698,9 @@ export function langMatches(expression: SPARQL, range: TagRange): SPARQL {
  * Evaluates to `true` when `text` matches the regular expression `pattern`; with `flags`, applies the match modifiers,
  * such as `"i"` for case-insensitivity.
  *
- * @param text The expression evaluating to the string to test
- * @param pattern The expression evaluating to the regular-expression pattern, typically a {@link literal}
- * @param flags The expression evaluating to the match flags, or omitted for none
+ * @param text - The expression evaluating to the string to test
+ * @param pattern - The expression evaluating to the regular-expression pattern, typically a {@link string}
+ * @param flags - The expression evaluating to the match flags, or omitted for none
  *
  * @returns The `regex()` call
  *
@@ -1634,10 +1716,10 @@ export function regex(text: SPARQL, pattern: SPARQL, flags?: SPARQL): SPARQL {
  * Replaces each match of the regular expression `pattern` in `text` with `replacement`; with `flags`, applies the match
  * modifiers, such as `"i"` for case-insensitivity.
  *
- * @param text The expression evaluating to the string to transform
- * @param pattern The expression evaluating to the regular-expression pattern, typically a {@link literal}
- * @param replacement The expression evaluating to the replacement template
- * @param flags The expression evaluating to the match flags, or omitted for none
+ * @param text - The expression evaluating to the string to transform
+ * @param pattern - The expression evaluating to the regular-expression pattern, typically a {@link string}
+ * @param replacement - The expression evaluating to the replacement template
+ * @param flags - The expression evaluating to the match flags, or omitted for none
  *
  * @returns The `replace()` call
  *
@@ -1655,7 +1737,7 @@ export function replace(text: SPARQL, pattern: SPARQL, replacement: SPARQL, flag
 /**
  * Generates a SPARQL `abs()` call returning a number's absolute value.
  *
- * @param expression The expression evaluating to the number
+ * @param expression - The expression evaluating to the number
  *
  * @returns The `abs()` call
  *
@@ -1668,7 +1750,7 @@ export function abs(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `round()` call rounding a number to the nearest integer.
  *
- * @param expression The expression evaluating to the number
+ * @param expression - The expression evaluating to the number
  *
  * @returns The `round()` call
  *
@@ -1681,7 +1763,7 @@ export function round(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `ceil()` call rounding a number up to an integer.
  *
- * @param expression The expression evaluating to the number
+ * @param expression - The expression evaluating to the number
  *
  * @returns The `ceil()` call
  *
@@ -1694,7 +1776,7 @@ export function ceil(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `floor()` call rounding a number down to an integer.
  *
- * @param expression The expression evaluating to the number
+ * @param expression - The expression evaluating to the number
  *
  * @returns The `floor()` call
  *
@@ -1732,7 +1814,7 @@ export function now(): SPARQL {
 /**
  * Generates a SPARQL `year()` call extracting a dateTime's year.
  *
- * @param expression The expression evaluating to the `xsd:dateTime`
+ * @param expression - The expression evaluating to the `xsd:dateTime`
  *
  * @returns The `year()` call
  *
@@ -1745,7 +1827,7 @@ export function year(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `month()` call extracting a dateTime's month.
  *
- * @param expression The expression evaluating to the `xsd:dateTime`
+ * @param expression - The expression evaluating to the `xsd:dateTime`
  *
  * @returns The `month()` call
  *
@@ -1758,7 +1840,7 @@ export function month(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `day()` call extracting a dateTime's day.
  *
- * @param expression The expression evaluating to the `xsd:dateTime`
+ * @param expression - The expression evaluating to the `xsd:dateTime`
  *
  * @returns The `day()` call
  *
@@ -1771,7 +1853,7 @@ export function day(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `hours()` call extracting a dateTime's hours.
  *
- * @param expression The expression evaluating to the `xsd:dateTime`
+ * @param expression - The expression evaluating to the `xsd:dateTime`
  *
  * @returns The `hours()` call
  *
@@ -1784,7 +1866,7 @@ export function hours(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `minutes()` call extracting a dateTime's minutes.
  *
- * @param expression The expression evaluating to the `xsd:dateTime`
+ * @param expression - The expression evaluating to the `xsd:dateTime`
  *
  * @returns The `minutes()` call
  *
@@ -1797,7 +1879,7 @@ export function minutes(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `seconds()` call extracting a dateTime's seconds.
  *
- * @param expression The expression evaluating to the `xsd:dateTime`
+ * @param expression - The expression evaluating to the `xsd:dateTime`
  *
  * @returns The `seconds()` call
  *
@@ -1813,7 +1895,7 @@ export function seconds(expression: SPARQL): SPARQL {
  * Returns the timezone offset as an `xsd:dayTimeDuration`, raising when the argument carries no timezone; the
  * string-valued {@link tz} variant returns the empty string instead.
  *
- * @param expression The expression evaluating to the `xsd:dateTime`
+ * @param expression - The expression evaluating to the `xsd:dateTime`
  *
  * @returns The `timezone()` call
  *
@@ -1829,7 +1911,7 @@ export function timezone(expression: SPARQL): SPARQL {
  * Returns the timezone offset as a string, or the empty string when the argument carries no timezone; the
  * duration-valued {@link timezone} variant raises instead.
  *
- * @param expression The expression evaluating to the `xsd:dateTime`
+ * @param expression - The expression evaluating to the `xsd:dateTime`
  *
  * @returns The `tz()` call
  *
@@ -1845,7 +1927,7 @@ export function tz(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `md5()` call returning a string's MD5 digest.
  *
- * @param expression The expression evaluating to the string to digest
+ * @param expression - The expression evaluating to the string to digest
  *
  * @returns The `md5()` call, yielding the digest as a hex string
  *
@@ -1858,7 +1940,7 @@ export function md5(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `sha1()` call returning a string's SHA-1 digest.
  *
- * @param expression The expression evaluating to the string to digest
+ * @param expression - The expression evaluating to the string to digest
  *
  * @returns The `sha1()` call, yielding the digest as a hex string
  *
@@ -1871,7 +1953,7 @@ export function sha1(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `sha256()` call returning a string's SHA-256 digest.
  *
- * @param expression The expression evaluating to the string to digest
+ * @param expression - The expression evaluating to the string to digest
  *
  * @returns The `sha256()` call, yielding the digest as a hex string
  *
@@ -1884,7 +1966,7 @@ export function sha256(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `sha384()` call returning a string's SHA-384 digest.
  *
- * @param expression The expression evaluating to the string to digest
+ * @param expression - The expression evaluating to the string to digest
  *
  * @returns The `sha384()` call, yielding the digest as a hex string
  *
@@ -1897,7 +1979,7 @@ export function sha384(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `sha512()` call returning a string's SHA-512 digest.
  *
- * @param expression The expression evaluating to the string to digest
+ * @param expression - The expression evaluating to the string to digest
  *
  * @returns The `sha512()` call, yielding the digest as a hex string
  *
@@ -1916,7 +1998,7 @@ export function sha512(expression: SPARQL): SPARQL {
  * Counts the solutions in a group, or the bindings of `expression` when one is supplied. Wrap the argument in
  * {@link distinct} to count distinct values; omit it to count every solution as `count(*)`.
  *
- * @param expression The expression whose bindings are counted, or omitted to count all solutions
+ * @param expression - The expression whose bindings are counted, or omitted to count all solutions
  *
  * @returns The `count(…)` aggregate
  *
@@ -1929,7 +2011,7 @@ export function count(expression?: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `sum()` aggregate.
  *
- * @param expression The numeric expression to total over the group
+ * @param expression - The numeric expression to total over the group
  *
  * @returns The `sum(…)` aggregate
  *
@@ -1942,7 +2024,7 @@ export function sum(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `min()` aggregate.
  *
- * @param expression The expression to take the minimum of over the group
+ * @param expression - The expression to take the minimum of over the group
  *
  * @returns The `min(…)` aggregate
  *
@@ -1955,7 +2037,7 @@ export function min(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `max()` aggregate.
  *
- * @param expression The expression to take the maximum of over the group
+ * @param expression - The expression to take the maximum of over the group
  *
  * @returns The `max(…)` aggregate
  *
@@ -1968,7 +2050,7 @@ export function max(expression: SPARQL): SPARQL {
 /**
  * Generates a SPARQL `avg()` aggregate.
  *
- * @param expression The numeric expression to average over the group
+ * @param expression - The numeric expression to average over the group
  *
  * @returns The `avg(…)` aggregate
  *
@@ -1984,7 +2066,7 @@ export function avg(expression: SPARQL): SPARQL {
  * Returns an arbitrary value from the group's bindings of `expression`, used to carry a non-grouped column through an
  * aggregating query.
  *
- * @param expression The expression to sample a binding from over the group
+ * @param expression - The expression to sample a binding from over the group
  *
  * @returns The `sample(…)` aggregate
  *
@@ -2000,8 +2082,8 @@ export function sample(expression: SPARQL): SPARQL {
  * Concatenates the group's string bindings of `expression`. With a `separator`, inserts it between values via the
  * `separator=` keyword argument; without one, SPARQL defaults to a single space.
  *
- * @param expression The expression whose string bindings are concatenated
- * @param separator The string inserted between values, or omitted for the default single space
+ * @param expression - The expression whose string bindings are concatenated
+ * @param separator - The string inserted between values, or omitted for the default single space
  *
  * @returns The `group_concat(…)` aggregate
  *
@@ -2010,60 +2092,23 @@ export function sample(expression: SPARQL): SPARQL {
 export function groupConcat(expression: SPARQL, separator?: string): SPARQL {
 	return separator === undefined
 		? `group_concat(${expression})`
-		: `group_concat(${expression}; separator=${literal(separator)})`;
+		: `group_concat(${expression}; separator=${string(separator)})`;
 }
 
 
 //// Serialisers (§4) //////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Generates SPARQL triple data from a {@link Triple} sequence.
- *
- * Renders each triple via {@link triple} as `subject predicate object .` and space-joins them, so the empty sequence
- * yields the empty string. The predicate `"a"` shorthand is expanded to the full `rdf:type` IRI.
- *
- * @param triples The triples to serialise
- *
- * @returns The generated triple data, space-joined, or the empty string for an empty sequence
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#QSynTriples SPARQL 1.1 Triple Patterns}
- */
-export function triples(triples: readonly Triple[]): SPARQL {
-	return triples.map(triple).join(" ");
-}
-
-/**
- * Generates the SPARQL representation of a single {@link Triple}.
- *
- * Renders the triple as `subject predicate object .`. The subject and object are rendered via {@link term} and the
- * predicate via {@link reference}, with the `"a"`
- * ({@link https://www.w3.org/TR/sparql11-query/#abbrevRdfType SPARQL `rdf:type` shorthand}) expanded to the full
- * `rdf:type` IRI.
- *
- * @param triple The triple to serialise, as a `[subject, predicate, object]` tuple
- *
- * @returns The generated triple
- *
- * @see {@link https://www.w3.org/TR/sparql11-query/#QSynTriples SPARQL 1.1 Triple Patterns}
- */
-export function triple([subject, predicate, object]: Triple): SPARQL {
-	return edge(
-		term(subject),
-		reference(predicate === "a" ? type : predicate),
-		term(object)
-	);
-}
-
-
-/**
  * Generates SPARQL triple patterns from a {@link Pattern} sequence.
  *
- * Renders each pattern as `subject predicate object .` and space-joins them, so the empty sequence yields the empty
- * string. {@link Variable} positions render as themselves and the predicate `"a"` shorthand is emitted verbatim.
+ * Renders each pattern via {@link pattern} as `subject predicate object .` and space-joins them, so the empty sequence
+ * yields the empty string.
  *
- * @param patterns The triple patterns to serialise
+ * @param patterns - The triple patterns to serialise
  *
  * @returns The generated triple patterns, space-joined, or the empty string for an empty sequence
+ *
+ * @throws RangeError if any pattern carries a malformed IRI, lexical form, or language tag
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#QSynTriples SPARQL 1.1 Triple Patterns}
  */
@@ -2075,22 +2120,66 @@ export function patterns(patterns: readonly Pattern[]): SPARQL {
  * Generates a SPARQL triple pattern.
  *
  * Dispatches each position of the {@link Pattern} to the matching serialiser: a {@link Variable} renders as itself via
- * {@link variable}; a non-variable subject renders as a {@link blank | blank node} or an IRI {@link reference}; the
- * predicate renders as an IRI {@link reference}, or verbatim for the `"a"`
- * ({@link https://www.w3.org/TR/sparql11-query/#abbrevRdfType SPARQL `rdf:type` shorthand}); a non-variable object
- * renders as any {@link term}.
+ * {@link variable}; a non-variable subject renders as a {@link blank | blank node} or an IRI {@link reference}; a
+ * non-variable object renders as any {@link term}. A non-variable predicate renders as an IRI {@link reference},
+ * except for the `type` IRI of the {@link rdf} vocabulary namespace, which is abbreviated to the SPARQL `a`
+ * {@link https://www.w3.org/TR/sparql11-query/#abbrevRdfType shorthand}.
  *
- * @param pattern The triple pattern to serialise, as a `[subject, predicate, object]` tuple
+ * @param pattern - The triple pattern to serialise, as a `[subject, predicate, object]` tuple
  *
  * @returns The generated triple pattern
+ *
+ * @throws RangeError if `pattern` carries a malformed IRI, lexical form, or language tag
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#QSynTriples SPARQL 1.1 Triple Patterns}
  */
 export function pattern([subject, predicate, object]: Pattern): SPARQL {
 	return edge(
-		isVariable(subject) ? variable(subject) : term(subject),
-		isVariable(predicate) ? variable(predicate) : predicate === "a" ? "a" : reference(predicate),
-		isVariable(object) ? variable(object) : term(object)
+		isString(subject) ? variable(subject) : term(subject),
+		isString(predicate) ? variable(predicate) : predicate.iri === rdf.type ? "a" : reference(predicate.iri),
+		isString(object) ? variable(object) : term(object)
+	);
+}
+
+
+/**
+ * Generates SPARQL triple data from a {@link Triple} sequence.
+ *
+ * Renders each triple via {@link triple} as `subject predicate object .` and space-joins them, so the empty sequence
+ * yields the empty string.
+ *
+ * @param triples - The triples to serialise
+ *
+ * @returns The generated triple data, space-joined, or the empty string for an empty sequence
+ *
+ * @throws RangeError if any triple carries a malformed IRI, lexical form, or language tag
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#QSynTriples SPARQL 1.1 Triple Patterns}
+ */
+export function triples(triples: readonly Triple[]): SPARQL {
+	return triples.map(triple).join(" ");
+}
+
+/**
+ * Generates the SPARQL representation of a single {@link Triple}.
+ *
+ * Renders the triple as `subject predicate object .`, with the subject and object rendered via {@link term}. The
+ * predicate renders as an IRI {@link reference}, except for the `type` IRI of the {@link rdf} vocabulary namespace,
+ * which is abbreviated to the SPARQL `a` {@link https://www.w3.org/TR/sparql11-query/#abbrevRdfType shorthand}.
+ *
+ * @param triple - The triple to serialise, as a `[subject, predicate, object]` tuple
+ *
+ * @returns The generated triple
+ *
+ * @throws RangeError if `triple` carries a malformed IRI, lexical form, or language tag
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#QSynTriples SPARQL 1.1 Triple Patterns}
+ */
+export function triple([subject, predicate, object]: Triple): SPARQL {
+	return edge(
+		term(subject),
+		predicate.iri === rdf.type ? "a" : reference(predicate.iri),
+		term(object)
 	);
 }
 
@@ -2101,12 +2190,14 @@ export function pattern([subject, predicate, object]: Pattern): SPARQL {
  * Dispatches to {@link variable} for a query variable and to {@link term} for any RDF term, serialising a node that
  * occupies a subject or object position whether or not it is left unbound.
  *
- * @param anchor The query variable or RDF term to render
+ * @param anchor - The query variable or RDF term to render
  *
  * @returns The generated SPARQL node
+ *
+ * @throws RangeError if `anchor` is a term carrying a malformed IRI, lexical form, or language tag
  */
 export function anchor(anchor: Variable | Term): SPARQL {
-	return isVariable(anchor) ? variable(anchor) : term(anchor);
+	return isString(anchor) ? variable(anchor) : term(anchor);
 }
 
 /**
@@ -2114,7 +2205,7 @@ export function anchor(anchor: Variable | Term): SPARQL {
  *
  * The variable token is already its own SPARQL form (for example `?0`), so it is emitted verbatim.
  *
- * @param variable The variable token
+ * @param variable - The variable token
  *
  * @returns The SPARQL variable
  */
@@ -2122,61 +2213,81 @@ export function variable(variable: Variable): SPARQL {
 	return variable;
 }
 
-
 /**
  * Generates the SPARQL representation of a {@link Term}.
  *
- * Delegates to {@link blank} for blank nodes, {@link reference} for IRIs, and {@link literal} for
- * {@link Tagged | language-tagged} and {@link Typed | datatype-typed} literals; `literal` selects the tagged or typed
- * form based on the supplied language tag or datatype IRI.
+ * Dispatches on the term's `kind`: {@link blank} for a blank node's label, {@link reference} for a named resource's
+ * IRI, {@link tagged} for language-tagged literals and {@link typed} for datatype-typed ones, collapsing a literal
+ * carrying the redundant `xsd:string` datatype to the bare quoted form.
  *
- * @param term The RDF term to render
+ * @param term - The RDF term to render
  *
  * @returns The generated SPARQL term
  *
+ * @throws RangeError if `term` carries a malformed IRI, lexical form, or language tag
+ *
  * @remarks
  *
- * Renders SPARQL query text and is distinct from the same-named `term` constructor in the package entry module, which
- * mints an RDF {@link Term} value. The companion serialisers {@link tagged} and {@link typed} shadow their value
- * constructors the same way.
+ * Renders SPARQL query text and is distinct from the same-named `term` encoder of
+ * {@link https://metreeca.github.io/trio/ @metreeca/trio}, which mints RDF {@link Term} values. The companion
+ * serialisers {@link blank}, {@link tagged} and {@link typed} shadow that package's same-named value constructors the
+ * same way, as does {@link reference} for its `named` one.
  */
 export function term(term: Term): SPARQL {
-	return isBlankValue(term) ? blank(term)
-		: isReference(term) ? reference(term)
-			: literal(term.text, isTagged(term) ? term.language : term.datatype);
+	return term.kind === "blank" ? blank(term.label)
+		: term.kind === "named" ? reference(term.iri)
+			: term.kind === "tagged" ? tagged(term.text, term.language)
+				: typed(term.text, term.datatype);
 }
 
+
 /**
- * Generates the SPARQL representation of a {@link Blank | blank node}.
+ * Generates the SPARQL representation of a blank node.
  *
- * The blank-node label is already its own SPARQL form (for example `_:0`), so it is emitted verbatim. When omitted,
- * mints a fresh `crypto.randomUUID()` label so the node stays distinct within the generated fragment.
+ * Renders the supplied label into a `_:`-prefixed token. With no argument, mints a fresh token with a random label;
+ * supply a label only where blank-node identity must be correlated across the fragment.
  *
- * @param blank The blank-node label, or omitted to mint a fresh anonymous label
+ * > [!WARNING]
+ * > The label is rendered as supplied: `BLANK_NODE_LABEL` defines no escape mechanism and the label is not checked
+ * > against the production, so a malformed label breaks the fragment carrying it. Callers relaying labels from
+ * > external sources are responsible for vetting them.
+ *
+ * @param label - The blank-node label: a non-negative integer, or a string matching the `BLANK_NODE_LABEL` body;
+ * 		omitted to mint a fresh anonymous node
  *
  * @returns The generated blank node
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#QSynBlankNodes SPARQL 1.1 Blank Nodes}
+ * @see {@link https://www.w3.org/TR/sparql11-query/#rBLANK_NODE_LABEL SPARQL 1.1 §19.8 — BLANK_NODE_LABEL}
  */
-export function blank(blank?: Blank): SPARQL {
-	return blank ?? `_:${crypto.randomUUID()}`;
+export function blank(label?: number | string): SPARQL {
+	return `_:${label ?? crypto.randomUUID().replaceAll("-", "")}`;
 }
 
 /**
- * Generates the SPARQL IRIREF for an IRI {@link Reference}.
+ * Generates the SPARQL IRIREF for an {@link IRI}.
  *
- * Wraps the IRI in angle brackets and escapes characters forbidden by the IRIREF production. If no `reference` is
- * supplied, mints a fresh opaque `urn:uuid:` IRI via `crypto.randomUUID()`; useful for one-shot anonymous
- * resource anchors in generated SPARQL.
+ * Renders the supplied IRI into an angle-bracketed IRIREF, escaping supplementary code points as UCHAR sequences. With
+ * no argument, mints a fresh opaque `urn:uuid:` IRI, useful for one-shot anonymous resource anchors in generated
+ * SPARQL.
  *
- * @param reference The IRI, or omitted to mint a fresh `urn:uuid:` IRI
+ * The IRI is validated as an RFC 3987 reference, absolute or relative, and never resolved: a relative IRI is accepted
+ * and rendered as supplied, unlike the `named` term constructor of
+ * {@link https://metreeca.github.io/trio/ @metreeca/trio}, which admits only absolute ones.
+ *
+ * @param iri - The IRI to render, or omitted to mint a fresh `urn:uuid:` IRI
  *
  * @returns The generated IRIREF
  *
+ * @throws RangeError if `iri` is not a well-formed RFC 3987 reference, an isolated UTF-16 surrogate code point
+ * 		included
+ *
  * @see {@link https://www.w3.org/TR/sparql11-query/#rIRIREF SPARQL 1.1 IRIREF}
  */
-export function reference(reference?: Reference): SPARQL {
-	return `<${reference ? escapeIRI(reference) : `urn:uuid:${crypto.randomUUID()}`}>`;
+export function reference(iri?: IRI): SPARQL {
+	return iri === undefined ? `<urn:uuid:${crypto.randomUUID()}>`
+		: isReference(iri) ? `<${escapeIRI(iri)}>`
+			: error(new RangeError(`malformed IRI reference <${iri}>`));
 }
 
 /**
@@ -2185,7 +2296,7 @@ export function reference(reference?: Reference): SPARQL {
  * Emits the SPARQL boolean keyword `true` or `false`, the shorthand syntax for an `xsd:boolean` literal, rather than
  * the verbose `"true"^^xsd:boolean` typed form.
  *
- * @param value The boolean value to render
+ * @param value - The boolean value to render
  *
  * @returns The generated boolean literal, either `true` or `false`
  *
@@ -2203,7 +2314,7 @@ export function boolean(value: boolean): SPARQL {
  * an `xsd:double` otherwise (for example `1e-7`). A non-finite value has no native SPARQL syntax and renders as an
  * explicitly typed `xsd:double` literal, using the lexical forms `INF`, `-INF` and `NaN`.
  *
- * @param value The numeric value to render
+ * @param value - The numeric value to render
  *
  * @returns The generated numeric literal
  *
@@ -2211,82 +2322,100 @@ export function boolean(value: boolean): SPARQL {
  */
 export function number(value: number): SPARQL {
 	return Number.isFinite(value) ? String(value)
-		: typed(Number.isNaN(value) ? "NaN" : value > 0 ? "INF" : "-INF", xsd.double);
+		: `"${Number.isNaN(value) ? "NaN" : value > 0 ? "INF" : "-INF"}"^^${reference(xsd.double)}`;
 }
 
 /**
  * Generates the SPARQL representation of a string value.
  *
- * Emits a simple literal in double quotes, escaping the content according to the N-Triples STRING_LITERAL_QUOTE
- * production; equivalent to {@link literal} called without a datatype.
+ * Emits a simple literal in double quotes, escaping the content according to the STRING_LITERAL2 production; the
+ * `xsd:string` datatype is implied and left off, so this is the shortest form of a plain string literal.
  *
- * @param value The string value to render
+ * @param value - The string value to render
  *
  * @returns The generated simple literal
  *
- * @see {@link https://www.w3.org/TR/n-triples/#grammar-production-STRING_LITERAL_QUOTE N-Triples STRING_LITERAL_QUOTE}
+ * @throws RangeError if `value` is not a well-formed Unicode string, that is if it holds an isolated UTF-16 surrogate
+ * 		code point
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#rSTRING_LITERAL2 SPARQL 1.1 STRING_LITERAL2}
  */
 export function string(value: string): SPARQL {
-	return `"${escapeString(value)}"`;
-}
-
-/**
- * Generates the SPARQL representation of a literal value.
- *
- * Without a `type` (or with the redundant `xsd:string` datatype), produces a simple literal in double quotes. With a
- * {@link Tag}, produces a language-tagged literal. With any other {@link Reference}, produces a datatype-annotated
- * literal. String content is escaped according to the N-Triples STRING_LITERAL_QUOTE production.
- *
- * @param text The lexical value of the literal
- * @param type The language tag or datatype IRI, or omitted for a simple literal
- *
- * @returns The generated literal
- *
- * @see {@link boolean}
- * @see {@link number}
- * @see {@link string}
- * @see {@link https://www.w3.org/TR/n-triples/#grammar-production-STRING_LITERAL_QUOTE N-Triples STRING_LITERAL_QUOTE}
- */
-export function literal(text: string, type?: Tag | Reference): SPARQL {
-	return isTag(type) ? tagged(text, type)
-		: type !== undefined && type !== xsd.string ? typed(text, type)
-			: `"${escapeString(text)}"`;
+	return isWellFormed(value) ? `"${escapeString(value)}"`
+		: error(new RangeError(`malformed lexical form <${value}>`));
 }
 
 /**
  * Generates a language-tagged RDF literal.
  *
- * Emits the N-Triples form `"text"@language`, escaping `text` according to the STRING_LITERAL_QUOTE production.
+ * Emits the form `"text"@language`, escaping `text` according to the STRING_LITERAL2 production. The tag is validated
+ * rather than escaped: `LANGTAG` admits no escape mechanism, so an unchecked tag carrying grammar delimiters would
+ * break out of the literal into the surrounding fragment.
  *
- * @param text The lexical value of the literal
- * @param language The BCP 47 language tag
+ * @param text - The lexical value of the literal
+ * @param language - The BCP 47 language tag
  *
  * @returns The generated language-tagged literal
  *
- * @see {@link https://www.w3.org/TR/n-triples/#grammar-production-literal N-Triples literal production}
+ * @throws RangeError if `text` is not a well-formed Unicode string, that is if it holds an isolated UTF-16 surrogate
+ * 		code point, or if `language` is not a well-formed BCP 47 language tag
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#rRDFLiteral SPARQL 1.1 RDFLiteral}
+ * @see {@link https://www.w3.org/TR/sparql11-query/#rLANGTAG SPARQL 1.1 §19.8 — LANGTAG}
  */
 export function tagged(text: string, language: Tag): SPARQL {
-	return `"${escapeString(text)}"@${language}`;
+	return !isTag(language) ? error(new RangeError(`malformed language tag <${language}>`))
+		: `${string(text)}@${language}`;
 }
 
 /**
  * Generates a datatype-annotated RDF literal.
  *
- * Emits the N-Triples form `"text"^^<datatype>`, escaping `text` according to the STRING_LITERAL_QUOTE production
- * and the IRI according to the IRIREF production.
+ * Emits the form `"text"^^<datatype>`, escaping `text` according to the STRING_LITERAL2 production and the datatype
+ * IRI according to the IRIREF production. Since RDF 1.1 reads an unannotated literal as an `xsd:string`, a literal
+ * with no datatype, or with the redundant `xsd:string` datatype, collapses to the bare quoted form emitted by
+ * {@link string}.
  *
- * @param text The lexical value of the literal
- * @param datatype The IRI identifying the literal's datatype
+ * @param text - The lexical value of the literal
+ * @param datatype - The IRI identifying the literal's datatype, or omitted for a plain `xsd:string` literal
  *
- * @returns The generated datatype-annotated literal
+ * @returns The generated literal, datatype-annotated unless the datatype is omitted or `xsd:string`
  *
- * @remarks
+ * @throws RangeError if `text` is not a well-formed Unicode string, or if `datatype` is not a well-formed RFC 3987
+ * 		reference, an isolated UTF-16 surrogate code point included
  *
- * Renders SPARQL query text, distinct from the same-named `typed` constructor in the package entry module that mints
- * an RDF value.
- *
- * @see {@link https://www.w3.org/TR/n-triples/#grammar-production-literal N-Triples literal production}
+ * @see {@link https://www.w3.org/TR/sparql11-query/#rRDFLiteral SPARQL 1.1 RDFLiteral}
  */
-export function typed(text: string, datatype: Reference): SPARQL {
-	return `"${escapeString(text)}"^^${reference(datatype)}`;
+export function typed(text: string, datatype?: IRI): SPARQL {
+	return datatype === undefined || datatype === xsd.string ? string(text)
+		: `${string(text)}^^${reference(datatype)}`;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Escapes an IRI for inclusion between the angle brackets of an IRIREF.
+ *
+ * Emits an eight-digit `\UXXXXXXXX` UCHAR escape for every character {@link IRIEscapePattern} selects, leaving
+ * everything else as it is, the non-ASCII BMP characters the production admits directly included. Every escape is
+ * numeric, `UCHAR` being the only escape `IRIREF` admits, so the two-character shorthands are overridden with an
+ * empty table.
+ */
+function escapeIRI(iri: IRI): string {
+	return escape(iri, IRIEscapePattern, {});
+}
+
+/**
+ * Escapes a lexical form for inclusion between the double quotes of a STRING_LITERAL2.
+ *
+ * Replaces backslash, double-quote and the C0 control characters with the two-character escapes `ECHAR` shares with
+ * JSON, and every remaining control character with its four-digit `\uXXXX` sequence, which SPARQL resolves into a code
+ * point `STRING_LITERAL2` then admits verbatim. Supplementary code points are left as they are, the production
+ * admitting them directly.
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#rECHAR SPARQL 1.1 §19.8 — ECHAR}
+ */
+function escapeString(text: string): string {
+	return escape(text);
 }

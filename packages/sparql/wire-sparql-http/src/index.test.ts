@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { isBlank, reference, tagged, typed } from "@metreeca/wire-sparql";
+import { blank, named, tagged, typed } from "@metreeca/trio";
 import { describe, expect, test } from "vitest";
 import { decodeTerm, decodeTuples } from "./index.core.js";
 
@@ -37,7 +37,7 @@ describe("bindings", () => {
 				}]
 			}
 		})).toEqual([
-			{ "?0": "http://example.com/s", "?1": typed("v") }
+			{ "?0": named("http://example.com/s"), "?1": typed("v") }
 		]);
 
 	});
@@ -51,7 +51,7 @@ describe("bindings", () => {
 				}]
 			}
 		})).toEqual([
-			{ "?v0": "http://example.com/" }
+			{ "?v0": named("http://example.com/") }
 		]);
 
 	});
@@ -70,17 +70,17 @@ describe("bindings", () => {
 
 });
 
-describe("reference", () => {
+describe("named", () => {
 
-	test("returns an IRI unchanged", () => {
+	test("boxes an IRI into a named resource", () => {
 
-		expect(reference("http://example.com/")).toBe("http://example.com/");
+		expect(named("http://example.com/")).toEqual({ kind: "named", iri: "http://example.com/" });
 
 	});
 
 	test("rejects a blank-node label", () => {
 
-		expect(() => reference("_:b1")).toThrow(RangeError);
+		expect(() => named("_:b1")).toThrow(RangeError);
 
 	});
 
@@ -90,7 +90,7 @@ describe("term", () => {
 
 	test("decodes a uri binding", () => {
 
-		expect(decodeTerm({ type: "uri", value: "http://example.com/" })).toBe("http://example.com/");
+		expect(decodeTerm({ type: "uri", value: "http://example.com/" })).toEqual(named("http://example.com/"));
 
 	});
 
@@ -142,7 +142,7 @@ describe("term", () => {
 
 		const decoded = decodeTerm({ type: "bnode", value: "b1" });
 
-		expect(isBlank(decoded) && decoded).toBe("_:0");
+		expect(decoded).toEqual(blank(0));
 
 	});
 

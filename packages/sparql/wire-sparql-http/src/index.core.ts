@@ -19,7 +19,8 @@
  *
  * Backs the `index` module with the {@link SPARQLBoolean}, {@link SPARQLBindings}, and {@link SPARQLBinding}
  * wire-document types and the {@link decodeTuples} and {@link decodeTerm} decoders that translate SPARQL 1.1 Query
- * Results JSON into the {@link @metreeca/wire-sparql!Tuple} and {@link @metreeca/wire-sparql!Term} model.
+ * Results JSON into the {@link @metreeca/wire-sparql!index.Tuple | Tuple} and {@link @metreeca/trio!Term | Term}
+ * model.
  *
  * @module
  *
@@ -27,7 +28,8 @@
  */
 
 import { createScope, type Scope } from "@metreeca/core/scope";
-import { blank, reference, tagged, type Term, type Tuple, typed, variable } from "@metreeca/wire-sparql";
+import { type Blank, blank, named, tagged, type Term, typed } from "@metreeca/trio";
+import { type Tuple, variable } from "@metreeca/wire-sparql";
 
 
 /**
@@ -88,9 +90,9 @@ export type SPARQLBinding = {
 /**
  * Decodes a {@link SPARQLBindings} value into the {@link Tuple} sequence produced for SPARQL `SELECT` results.
  *
- * Variable names are decoded from the wire string keys into {@link @metreeca/wire-sparql!Variable} tokens via
- * {@link variable}. A single blank-node {@link createScope | scope}, shared across all rows, correlates `bnode` labels
- * over the whole result set.
+ * Variable names are decoded from the wire string keys into {@link @metreeca/wire-sparql!index.Variable | Variable}
+ * tokens via {@link variable}. A single blank-node {@link createScope | scope}, shared across all rows, correlates
+ * `bnode` labels over the whole result set.
  *
  * @param value - Wire representation of a `SELECT` result set
  *
@@ -101,7 +103,7 @@ export type SPARQLBinding = {
  */
 export function decodeTuples(value: SPARQLBindings): readonly Tuple[] {
 
-	const blanks = createScope();
+	const blanks = createScope(blank);
 
 	return value.results.bindings.map(row => Object.fromEntries(
 		Object.entries(row).map(([name, binding]) => [variable(name), decodeTerm(binding, blanks)])
@@ -112,26 +114,28 @@ export function decodeTuples(value: SPARQLBindings): readonly Tuple[] {
 /**
  * Decodes a {@link SPARQLBinding} into an RDF {@link Term}.
  *
- * Decodes a `bnode` binding to a scope-numbered {@link @metreeca/wire-sparql!Blank}, allocating a short id per distinct
- * label from `blanks` so repeats of one label correlate to the same node. The `uri` value and any `datatype` IRI are
- * validated through {@link reference}, and an unrecognised `type` is rejected.
+ * Decodes a `bnode` binding to a scope-numbered {@link @metreeca/trio!Blank | Blank}, minting one node per distinct
+ * label from `blanks` so repeats of one label correlate to the same node. The `uri` value is validated through
+ * {@link named}, and a literal's lexical form, language tag and `datatype` IRI through {@link tagged} and
+ * {@link typed}, while an unrecognised `type` is rejected.
  *
  * @param value - Wire representation of an RDF term
  * @param blanks - The blank-node {@link Scope} correlating `bnode` labels; defaults to a fresh per-call scope
  *
  * @returns The decoded term
  *
- * @throws RangeError if `value.type` is unsupported, or if the `uri` value or a `datatype` IRI is relative or malformed
+ * @throws RangeError if `value.type` is unsupported, if the `uri` value or a `datatype` IRI is relative or malformed,
+ * if a lexical form holds an isolated UTF-16 surrogate code point, or if a language tag is not well-formed BCP 47
  */
-export function decodeTerm(value: SPARQLBinding, blanks: Scope = createScope()): Term {
+export function decodeTerm(value: SPARQLBinding, blanks: Scope<Blank> = createScope(blank)): Term {
 
 	if ( value.type === "bnode" ) {
 
-		return blank(blanks.resolve(value.value));
+		return blanks.resolve(value.value);
 
 	} else if ( value.type === "uri" ) {
 
-		return reference(value.value);
+		return named(value.value);
 
 	} else if ( value.type === "literal" || value.type === "typed-literal" ) {
 
@@ -143,7 +147,7 @@ export function decodeTerm(value: SPARQLBinding, blanks: Scope = createScope()):
 
 		} else if ( value.datatype !== undefined ) {
 
-			return typed(value.value, reference(value.datatype));
+			return typed(value.value, value.datatype);
 
 		} else {
 

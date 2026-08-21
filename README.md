@@ -1,7 +1,5 @@
 # @metreeca/wire
 
-[![npm](https://img.shields.io/npm/v/@metreeca/wire)](https://www.npmjs.com/package/@metreeca/wire)
-
 Pluggable storage connectors for relational and graph databases.
 
 **@metreeca/wire** wires concrete database backends behind a common query interface per query-language family, so

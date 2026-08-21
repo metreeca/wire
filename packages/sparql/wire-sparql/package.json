@@ -31,17 +31,9 @@
       "@metreeca/source": "./src/index.ts",
       "default": "./dist/index.js"
     },
-    "./codecs/ntriples": {
-      "@metreeca/source": "./src/codecs/ntriples/index.ts",
-      "default": "./dist/codecs/ntriples/index.js"
-    },
-    "./dsl": {
-      "@metreeca/source": "./src/dsl.ts",
-      "default": "./dist/dsl.js"
-    },
-    "./rdf": {
-      "@metreeca/source": "./src/rdf.ts",
-      "default": "./dist/rdf.js"
+    "./builder": {
+      "@metreeca/source": "./src/builder.ts",
+      "default": "./dist/builder.js"
     }
   },
   "files": [
@@ -58,7 +50,8 @@
     "check": "npx vitest --typecheck run"
   },
   "dependencies": {
-    "@metreeca/core": "^0.9.19"
+    "@metreeca/core": "^0.9.19",
+    "@metreeca/trio": "^0.1.0"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

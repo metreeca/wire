@@ -29,10 +29,10 @@
  * @see {@link https://rdf4j.org/documentation/reference/rest-api/#transactions RDF4J REST API — Transactions}
  */
 
-import { immutable } from "@metreeca/core/deep";
+import { immutable } from "@metreeca/core/structures";
 import { createFetch, type Problem } from "@metreeca/core/problem";
 import { resolve } from "@metreeca/core/resource";
-import { media, type Repository } from "@metreeca/wire-sparql";
+import { type Repository, SPARQLQuery, SPARQLUpdate } from "@metreeca/wire-sparql";
 import { createHTTPRepository } from "@metreeca/wire-sparql-http";
 
 
@@ -61,7 +61,9 @@ import { createHTTPRepository } from "@metreeca/wire-sparql-http";
  * - A 2xx `construct` response whose `Content-Type` is not N-Triples rejects with a synthesised {@link Problem}
  * - A missing `Location` header on the start-transaction response rejects with a synthesised {@link Problem}
  * - A malformed result payload surfaces the decoder's own error: a `SyntaxError` for ill-formed N-Triples, or a
- *   `RangeError` for an unexpected SPARQL Results JSON term
+ *   `RangeError` for a term component either syntax admits but the RDF data model rejects (a relative IRI, a lexical
+ *   form holding an isolated surrogate, a non-conforming language tag), as well as for an unexpected SPARQL Results
+ *   JSON term
  *
  * Rollback (`DELETE` on the transaction URL) is best-effort: a network or 5xx failure on rollback
  * is swallowed so the original task error propagates; without best-effort handling a transient
@@ -163,7 +165,7 @@ export function createRDF4JRepository({
 
 			const { action, sparql } = await operation(request);
 
-			const contentType = action === "UPDATE" ? media.update : media.query;
+			const contentType = action === "UPDATE" ? SPARQLUpdate : SPARQLQuery;
 			const accept = request.headers.get("Accept");
 
 			return fetch(`${txn}?action=${action}`, {
@@ -222,7 +224,7 @@ export function createRDF4JRepository({
 
 			const sparql = await request.text();
 
-			return contentType === media.update
+			return contentType === SPARQLUpdate
 				? { action: "UPDATE", sparql }
 				: { action: "QUERY", sparql };
 
