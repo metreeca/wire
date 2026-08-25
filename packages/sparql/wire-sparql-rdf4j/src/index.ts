@@ -30,7 +30,7 @@
  */
 
 import { immutable } from "@metreeca/core/structures";
-import { createFetch, type Problem } from "@metreeca/core/problem";
+import { createFetch, type Problem, success, transport } from "@metreeca/core/fetch";
 import { resolve } from "@metreeca/core/resource";
 import { type Repository, SPARQLQuery, SPARQLUpdate } from "@metreeca/wire-sparql";
 import { createHTTPRepository } from "@metreeca/wire-sparql-http";
@@ -95,7 +95,7 @@ export function createRDF4JRepository({
 
 }): Repository {
 
-	const remote = createFetch(fetch);
+	const remote = createFetch(success(), transport(fetch));
 
 	const query = `${server}/repositories/${repository}`;
 	const update = `${query}/statements`;

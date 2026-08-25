@@ -59,8 +59,8 @@
  */
 
 import { error, isNumber, isString } from "@metreeca/core";
-import { immutable } from "@metreeca/core/structures";
 import { dedent } from "@metreeca/core/strings";
+import { immutable } from "@metreeca/core/structures";
 import { type Blank, type Named, type Term, type Triple } from "@metreeca/trio";
 import { update } from "./builder.js";
 

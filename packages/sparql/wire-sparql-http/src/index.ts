@@ -30,7 +30,7 @@
 
 import { isError } from "@metreeca/core";
 import { immutable } from "@metreeca/core/structures";
-import { createFetch, type Problem } from "@metreeca/core/problem";
+import { createFetch, type Problem, success, transport } from "@metreeca/core/fetch";
 import { decodeNTriples, NTriples } from "@metreeca/trio/ntriples";
 import { type Repository, type SPARQL, SPARQLQuery, SPARQLResults, SPARQLUpdate } from "@metreeca/wire-sparql";
 import { decodeTuples, type SPARQLBindings, type SPARQLBoolean } from "./index.core.js";
@@ -82,7 +82,7 @@ export function createHTTPRepository({
 
 }): Repository {
 
-	const remote = createFetch(fetch);
+	const remote = createFetch(success(), transport(fetch));
 
 
 	const repository: Repository = immutable({
