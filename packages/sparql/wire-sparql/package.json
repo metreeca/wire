@@ -50,7 +50,7 @@
     "check": "npx vitest --typecheck run"
   },
   "dependencies": {
-    "@metreeca/core": "^0.9.19",
+    "@metreeca/core": "^0.9.21",
     "@metreeca/trio": "^0.1.0"
   },
   "devDependencies": {

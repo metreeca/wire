@@ -53,6 +53,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `NTriples`
 - `@metreeca/wire-sparql` — `variable` now accepts any name matching the SPARQL `VARNAME` production, rather than only
   ASCII letters, digits, and underscores
+- every package now requires `@metreeca/core` `^0.9.21`, up from `^0.9.19`
 
 ### Removed
 
