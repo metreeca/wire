@@ -30,8 +30,10 @@
  */
 
 import { immutable } from "@metreeca/core/structures";
-import { createFetch, type Problem, success, transport } from "@metreeca/core/fetch";
 import { resolve } from "@metreeca/core/resource";
+import { createFetch } from "@metreeca/http";
+import { type Problem, success } from "@metreeca/http/success";
+import { transport } from "@metreeca/http/transport";
 import { type Repository, SPARQLQuery, SPARQLUpdate } from "@metreeca/wire-sparql";
 import { createHTTPRepository } from "@metreeca/wire-sparql-http";
 

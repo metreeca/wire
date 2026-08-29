@@ -30,7 +30,9 @@
 
 import { isError } from "@metreeca/core";
 import { immutable } from "@metreeca/core/structures";
-import { createFetch, type Problem, success, transport } from "@metreeca/core/fetch";
+import { createFetch } from "@metreeca/http";
+import { type Problem, success } from "@metreeca/http/success";
+import { transport } from "@metreeca/http/transport";
 import { decodeNTriples, NTriples } from "@metreeca/trio/ntriples";
 import { type Repository, type SPARQL, SPARQLQuery, SPARQLResults, SPARQLUpdate } from "@metreeca/wire-sparql";
 import { decodeTuples, type SPARQLBindings, type SPARQLBoolean } from "./index.core.js";
