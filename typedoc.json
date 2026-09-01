@@ -40,8 +40,8 @@
     "categorizeByGroup": true,
     "groupOrder": [
       "Variables",
-      "Type Aliases",
       "Interfaces",
+      "Type Aliases",
       "*"
     ]
   }
