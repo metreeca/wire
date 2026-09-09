@@ -1,6 +1,6 @@
 {
   "name": "@metreeca/wire-sparql-rdf4j",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "SPARQL connector for @metreeca/wire backed by an RDF4J Server repository.",
   "keywords": [
     "typescript",
@@ -47,10 +47,10 @@
     "check": "npx vitest --typecheck run"
   },
   "dependencies": {
-    "@metreeca/core": "^0.9.22",
-    "@metreeca/http": "^0.1.1",
-    "@metreeca/wire-sparql": "^0.9.0",
-    "@metreeca/wire-sparql-http": "^0.9.0"
+    "@metreeca/core": "^0.10.0",
+    "@metreeca/http": "^0.2.0",
+    "@metreeca/wire-sparql": "^0.10.0",
+    "@metreeca/wire-sparql-http": "^0.10.0"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
