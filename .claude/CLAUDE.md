@@ -26,10 +26,15 @@ there is no intermediate core package. The connectors are self-contained and con
 
 - **`npm run clean`** - Remove dependencies and build artefacts
 - **`npm run prime`** - Install dependencies from the lockfile
-- **`npm run setup`** - Configure for local development
+- **`npm run setup`** - Install dependencies and link sibling `@metreeca/*` repositories
 - **`npm run build`** - Compile sources and generate docs
 - **`npm run check`** - Run the test suite
 - **`npm run proof`** - Build and serve docs
+
+> [!CAUTION]
+> **`prime` and `setup` are not interchangeable.** Run `prime` when finalising a public release: `@metreeca/*` imports
+> resolve to the published releases recorded in the lockfile. Run `setup` for local development against unpublished
+> sibling branches: imports resolve to the working copies in the neighbouring repositories.
 
 # Package Layout
 
