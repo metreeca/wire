@@ -60,7 +60,7 @@
 
 import { error, isNumber, isString } from "@metreeca/core";
 import { dedent } from "@metreeca/core/strings";
-import { immutable } from "@metreeca/core/structures";
+import { immutable } from "@metreeca/core/values";
 import { type Blank, type Named, type Term, type Triple } from "@metreeca/trio";
 import { update } from "./builder.js";
 

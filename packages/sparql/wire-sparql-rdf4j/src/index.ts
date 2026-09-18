@@ -29,7 +29,7 @@
  * @see {@link https://rdf4j.org/documentation/reference/rest-api/#transactions RDF4J REST API — Transactions}
  */
 
-import { immutable } from "@metreeca/core/structures";
+import { immutable } from "@metreeca/core/values";
 import { resolve } from "@metreeca/core/resource";
 import { createFetch } from "@metreeca/http";
 import { type Problem, success } from "@metreeca/http/success";

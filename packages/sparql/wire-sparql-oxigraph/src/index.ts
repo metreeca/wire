@@ -30,7 +30,7 @@
  */
 
 import { error } from "@metreeca/core";
-import { immutable } from "@metreeca/core/structures";
+import { immutable } from "@metreeca/core/values";
 import { type IRI } from "@metreeca/core/resource";
 import { createScope, type Scope } from "@metreeca/core/scope";
 import {

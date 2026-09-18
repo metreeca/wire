@@ -29,7 +29,7 @@
  */
 
 import { isError } from "@metreeca/core";
-import { immutable } from "@metreeca/core/structures";
+import { immutable } from "@metreeca/core/values";
 import { createFetch } from "@metreeca/http";
 import { type Problem, success } from "@metreeca/http/success";
 import { transport } from "@metreeca/http/transport";
