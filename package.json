@@ -11,6 +11,7 @@
     "cypher",
     "sparql"
   ],
+  "type": "module",
   "workspaces": [
     "packages/*/*"
   ],

@@ -18,7 +18,7 @@ import { existsSync, readdirSync } from "fs";
 import { join } from "path";
 import { defineConfig } from "vitest/config";
 
-const packages = join(__dirname, "packages");
+const packages = join(import.meta.dirname, "packages");
 
 /**
  * Locates a `wire*` workspace package within its query-language group directory.
