@@ -3,7 +3,7 @@
     "packages/*/*"
   ],
   "entryPointStrategy": "packages",
-  "name": "Metreeca Wire",
+  "name": "@metreeca/wire",
   "out": "docs",
   "readme": "README.md",
   "hostedBaseUrl": "https://metreeca.github.io/wire/",
