@@ -47,9 +47,9 @@
     "check": "npx vitest --typecheck run"
   },
   "dependencies": {
-    "@metreeca/core": "^0.10.0",
-    "@metreeca/http": "^0.2.0",
-    "@metreeca/trio": "^0.1.1",
+    "@metreeca/core": "^0.12.0",
+    "@metreeca/http": "^0.4.0",
+    "@metreeca/trio": "^0.1.2",
     "@metreeca/wire-sparql": "^0.11.0"
   },
   "devDependencies": {

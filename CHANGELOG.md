@@ -11,6 +11,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Realign to the renamed `@metreeca/core` values module, raising the minimum supported version: `immutable` is imported
   from `@metreeca/core/values` in place of `@metreeca/core/structures`
+- Upgrade `@metreeca/core` to `^0.12.0`, `@metreeca/http` to `^0.4.0` and `@metreeca/trio` to `^0.1.2`: public
+  signatures exposing their types now require the upgraded releases
 
 ## [0.10.0](https://github.com/metreeca/wire/compare/v0.9.0...v0.10.0) - 2026-09-09
 
