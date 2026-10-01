@@ -7,6 +7,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/metreeca/wire/compare/v0.11.0...HEAD)
 
+### Fixed
+
+- Published package exports resolve to the compiled `dist` modules only, so consumers resolving the `@metreeca/source`
+  export condition no longer fail on TypeScript sources missing from the published packages
+
 ## [0.11.0](https://github.com/metreeca/wire/compare/v0.10.0...v0.11.0) - 2026-10-01
 
 ### Changed

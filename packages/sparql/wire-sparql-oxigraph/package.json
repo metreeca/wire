@@ -44,7 +44,8 @@
   "scripts": {
     "clean": "rm -rf dist docs node_modules",
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "check": "npx vitest --typecheck run"
+    "check": "npx vitest --typecheck run",
+    "prepack": "node ../../../prepack.mjs"
   },
   "dependencies": {
     "@metreeca/core": "^0.12.0",
