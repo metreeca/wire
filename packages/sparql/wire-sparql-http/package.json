@@ -1,6 +1,6 @@
 {
   "name": "@metreeca/wire-sparql-http",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "SPARQL connector for @metreeca/wire backed by a SPARQL 1.1 Protocol endpoint.",
   "keywords": [
     "typescript",

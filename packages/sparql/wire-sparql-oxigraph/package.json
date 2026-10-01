@@ -1,6 +1,6 @@
 {
   "name": "@metreeca/wire-sparql-oxigraph",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "SPARQL connector for @metreeca/wire backed by an Oxigraph in-memory WASM store.",
   "keywords": [
     "typescript",
