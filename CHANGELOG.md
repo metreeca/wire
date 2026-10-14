@@ -9,6 +9,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Upgrade `@metreeca/core` to `^0.12.1`
+- Upgrade `@metreeca/http` to `^0.4.1`
+- Upgrade `@metreeca/trio` to `^0.1.3`
 - Published package exports declare the `@metreeca/source` export condition again, which the published packages ship
   no sources for: consumers resolving it must restrict it to symlinked checkouts, as the `symlinks()` plugin from
   `@metreeca/rack/vite` does, rather than enable it globally, which fails on every package installed from the registry
