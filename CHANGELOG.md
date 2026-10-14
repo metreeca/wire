@@ -7,6 +7,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/metreeca/wire/compare/v0.11.1...HEAD)
 
+### Changed
+
+- Published package exports declare the `@metreeca/source` export condition again, which the published packages ship
+  no sources for: consumers resolving it must restrict it to symlinked checkouts, as the `symlinks()` plugin from
+  `@metreeca/rack/vite` does, rather than enable it globally, which fails on every package installed from the registry
+
 ## [0.11.1](https://github.com/metreeca/wire/compare/v0.11.0...v0.11.1) - 2026-10-01
 
 ### Fixed
