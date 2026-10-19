@@ -41,6 +41,14 @@ there is no intermediate core package. The connectors are self-contained and con
 The root `package.json` `workspaces` glob (`packages/*/*`) covers the connector packages, each nested under its
 query-language group directory (for example `packages/sparql/wire-sparql`).
 
+# Documentation
+
+Readers are expected to know the query language each connector family exposes (SPARQL 1.1, SQL:2011, GQL:2024).
+Document what a builder or connector adds on top of the language: how arguments are rendered, how empty fragments
+and arrays are handled, what is validated or escaped and what is thrown. Never restate the semantics of the language
+itself (what a keyword matches, what a function returns, how an aggregate groups): link the specification with `@see`
+instead, and never explain self-evident naming choices such as respellings of reserved words.
+
 # Testing
 
 The root `vitest.config.ts` resolves imports of symlinked `@metreeca/*` packages, both workspace packages and siblings
