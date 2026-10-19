@@ -13,6 +13,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `@metreeca/wire-sparql` — `./builder` graph management operations `load`, `clear`, `create`, `drop`, `copy`, `move`
   and `aad`, with `silent` producing the `SILENT` form of these operations and of `service` blocks
 - `@metreeca/wire-sparql` — `./builder` `data` block, carrying the ground triples of a `deleet` or `insert` clause
+- `@metreeca/wire-sparql-rdf4j` — `infer` and `timeout` settings, applied to every query and update the connector
+  issues; RDF4J Server ignores `timeout` on updates within an `execute` task, so a bounded update runs outside one
 
 ### Changed
 

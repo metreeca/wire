@@ -19,7 +19,7 @@
  * {@link https://github.com/metreeca/wire @metreeca/wire} storage connector collection.
  *
  * Exposes any {@link https://rdf4j.org/ RDF4J Server} repository through the common {@link Repository} API,
- * bracketing each task in a server-managed transaction.
+ * bracketing each task in a server-managed transaction and applying optional inference and timeout settings.
  *
  * > [!IMPORTANT]
  * > **Transaction Isolation** — Determined by the target RDF4J repository.
@@ -29,6 +29,7 @@
  * @see {@link https://rdf4j.org/documentation/reference/rest-api/#transactions RDF4J REST API — Transactions}
  */
 
+import { assert } from "@metreeca/core";
 import { immutable } from "@metreeca/core/values";
 import { resolve } from "@metreeca/core/resource";
 import { createFetch } from "@metreeca/http";
@@ -69,13 +70,25 @@ import { createHTTPRepository } from "@metreeca/wire-sparql-http";
  *
  * Rollback is best-effort: a network or 5xx failure on rollback is swallowed, so the original task error propagates.
  *
- * @param options - Server URL and repository identifier
+ * > [!WARNING]
+ * > RDF4J Server does not apply `timeout` to updates issued within an {@link Repository.execute | execute} task,
+ * > so they always run to completion. Aborting the exchange through a custom `fetch` does not stop them either: the
+ * > update keeps running on the server, and the rollback waits for it to finish. Updates issued outside `execute`
+ * > honour `timeout`, so an update that needs a time bound has to run there, giving up transactional atomicity.
+ *
+ * @param options - Server URL, repository identifier and the operation settings applied to every exchange
  * @param options.server - RDF4J Server base URL, for example `http://localhost:8080/rdf4j-server`
  * @param options.repository - Repository identifier within the RDF4J Server instance
+ * @param options.infer - Whether operations take inferred statements into account; when omitted, RDF4J includes them
+ * wherever the repository computes them, so set it to `false` to restrict operations to explicit statements
+ * @param options.timeout - Maximum execution time of each operation, as a positive integer number of seconds; when
+ * omitted, operations run under the execution limit configured on the server, if any
  * @param options.fetch - Custom `fetch` implementation used for every HTTP exchange, enabling header, auth, and
  * exchange customisation; defaults to the global `fetch`
  *
  * @returns A {@link Repository} instance
+ *
+ * @throws TypeError if `timeout` is not a positive integer
  *
  * @see {@link https://rdf4j.org/documentation/reference/rest-api/#transactions RDF4J REST API — Transactions}
  */
@@ -84,6 +97,9 @@ export function createRDF4JRepository({
 	server,
 	repository,
 
+	infer,
+	timeout,
+
 	fetch = globalThis.fetch
 
 }: {
@@ -91,9 +107,21 @@ export function createRDF4JRepository({
 	readonly server: string;
 	readonly repository: string;
 
+	readonly infer?: boolean;
+	readonly timeout?: number;
+
 	readonly fetch?: typeof globalThis.fetch;
 
 }): Repository {
+
+	const $timeout = assert(timeout, timeout => timeout === undefined || Number.isInteger(timeout) && timeout > 0,
+		`expected positive integer timeout <${timeout}>`
+	);
+
+	const settings = new URLSearchParams([
+		...infer === undefined ? [] : [["infer", String(infer)]],
+		...$timeout === undefined ? [] : [["timeout", String($timeout)]]
+	]).toString();
 
 	const remote = createFetch(success(), transport(fetch));
 
@@ -103,7 +131,7 @@ export function createRDF4JRepository({
 
 	return immutable({
 
-		...createHTTPRepository({ query, update, fetch }),
+		...createHTTPRepository({ query: configure(query), update: configure(update), fetch }),
 
 		async execute(task) {
 
@@ -146,12 +174,25 @@ export function createRDF4JRepository({
 
 
 	/**
+	 * Applies the configured operation settings to an RDF4J endpoint.
+	 *
+	 * @param url - Endpoint URL, possibly already carrying URL parameters
+	 *
+	 * @returns `url` extended with the `infer` and `timeout` parameters, or `url` itself when none is configured
+	 */
+	function configure(url: string): string {
+
+		return settings === "" ? url : `${url}${url.includes("?") ? "&" : "?"}${settings}`;
+
+	}
+
+	/**
 	 * Builds a {@link fetch} that retargets SPARQL-over-HTTP exchanges onto an open RDF4J transaction.
 	 *
-	 * The returned fetch rewrites every exchange to `PUT <txn>?action=…`, deriving the action from the request
-	 * {@link operation} and lifting the SPARQL text into the PUT body so the mapping is independent of how the
-	 * originating exchange was transmitted. The `Accept` header is forwarded so response negotiation (SPARQL Results
-	 * JSON for `ask` and `select`, N-Triples for `construct`) is preserved.
+	 * The returned fetch rewrites every exchange to `PUT <txn>?action=…` with the configured operation settings,
+	 * deriving the action from the request {@link operation} and lifting the SPARQL text into the PUT body so the
+	 * mapping is independent of how the originating exchange was transmitted. The `Accept` header is forwarded so
+	 * response negotiation (SPARQL Results JSON for `ask` and `select`, N-Triples for `construct`) is preserved.
 	 *
 	 * @param txn - Transaction endpoint URL from the start-transaction `Location` header
 	 *
@@ -168,7 +209,7 @@ export function createRDF4JRepository({
 			const contentType = action === "UPDATE" ? SPARQLUpdate : SPARQLQuery;
 			const accept = request.headers.get("Accept");
 
-			return fetch(`${txn}?action=${action}`, {
+			return fetch(configure(`${txn}?action=${action}`), {
 				method: "PUT",
 				headers: accept === null
 					? { "Content-Type": contentType }

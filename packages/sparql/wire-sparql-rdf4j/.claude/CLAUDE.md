@@ -7,6 +7,6 @@
 
 > [!NOTE]
 > This connector delegates all non-transactional SPARQL exchanges to `@metreeca/wire-sparql-http`
-> (`createHTTPRepository`) and layers RDF4J server-managed transactions on top. It has no test of its own; its
-> conformance is exercised from `wire-sparql` (`packages/wire-sparql/src/index.test.ts`), where the **Verified
-> Backends** table is also maintained.
+> (`createHTTPRepository`) and layers RDF4J server-managed transactions and operation settings on top. Its tests
+> (`src/index.test.ts`) run against a stub `fetch` and cover only what the connector adds to the HTTP connector: the
+> forwarding of the `infer` and `timeout` settings to every endpoint, and the validation of `timeout`.

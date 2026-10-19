@@ -35,6 +35,10 @@ const repository = createRDF4JRepository({
 });
 ```
 
+The optional `infer` and `timeout` settings apply to every operation: `infer: false` restricts operations to explicit
+statements, and `timeout` bounds the execution time of each operation, in seconds. RDF4J Server ignores `timeout` on
+updates issued within an `execute` task, so an update that needs a time bound has to run outside a transaction.
+
 See [@metreeca/wire-sparql] for the `Repository` query API (`ask`, `select`, `construct`, `update`, `execute`, `close`).
 
 > [!IMPORTANT]
