@@ -15,6 +15,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `@metreeca/wire-sparql` — `./builder` `data` block, carrying the ground triples of a `deleet` or `insert` clause
 - `@metreeca/wire-sparql-rdf4j` — `infer` and `timeout` settings, applied to every query and update the connector
   issues; RDF4J Server ignores `timeout` on updates within an `execute` task, so a bounded update runs outside one
+- `@metreeca/wire-sparql` — `Dataset` argument on `ask`, `select`, `construct` and `update`, overriding the dataset
+  declared by the request text; `createBufferingRepository` joins only consecutive updates targeting equal datasets
+- `@metreeca/wire-sparql-http` and `@metreeca/wire-sparql-rdf4j` — datasets sent as SPARQL 1.1 Protocol parameters,
+  within RDF4J transactions too; `@metreeca/wire-sparql-oxigraph` applies them to queries and rejects update datasets
 
 ### Changed
 

@@ -29,6 +29,11 @@ describe("createRDF4JRepository", () => {
 		const txns = `${server}/repositories/${repository}/transactions`;
 		const txn = `${txns}/txn`;
 
+		const g = "http://example.org/g";
+		const n = "http://example.org/n";
+
+		const dataset = { default: [g], named: [n] };
+
 
 		/**
 		 * Builds a stub RDF4J Server answering every exchange with a minimal successful response.
@@ -102,6 +107,38 @@ describe("createRDF4JRepository", () => {
 			expect(parameters(fetch)).toEqual([
 				{ infer: "true", timeout: "30" },
 				{ infer: "true", timeout: "30" }
+			]);
+
+		});
+
+		it("forwards datasets alongside settings", async () => {
+
+			const fetch = stub();
+			const rdf4j = createRDF4JRepository({ server, repository, infer: false, fetch });
+
+			await rdf4j.ask("ask {}", dataset);
+			await rdf4j.update("delete where { ?s ?p ?o }", dataset);
+
+			expect(parameters(fetch)).toEqual([
+				{ "infer": "false", "default-graph-uri": g, "named-graph-uri": n },
+				{ "infer": "false", "using-graph-uri": g, "using-named-graph-uri": n }
+			]);
+
+		});
+
+		it("forwards datasets within transactions", async () => {
+
+			const fetch = stub();
+			const rdf4j = createRDF4JRepository({ server, repository, infer: false, fetch });
+
+			await rdf4j.execute(async client => {
+				await client.ask("ask {}", dataset);
+				await client.update("delete where { ?s ?p ?o }", dataset);
+			});
+
+			expect(parameters(fetch)).toEqual([
+				{ "infer": "false", "default-graph-uri": g, "named-graph-uri": n },
+				{ "infer": "false", "using-graph-uri": g, "using-named-graph-uri": n }
 			]);
 
 		});

@@ -43,9 +43,15 @@ import {
 	type Term,
 	typed
 } from "@metreeca/trio";
-import type { Repository } from "@metreeca/wire-sparql";
+import type { Dataset, Repository } from "@metreeca/wire-sparql";
 import { variable } from "@metreeca/wire-sparql";
-import { type Quad as OxyQuad, Store as OxyStore, type Term as OxyTerm } from "oxigraph";
+import {
+	type NamedNode as OxyNamedNode,
+	namedNode,
+	type Quad as OxyQuad,
+	Store as OxyStore,
+	type Term as OxyTerm
+} from "oxigraph";
 
 
 /**
@@ -53,6 +59,10 @@ import { type Quad as OxyQuad, Store as OxyStore, type Term as OxyTerm } from "o
  *
  * > [!IMPORTANT]
  * > **Transaction Isolation** — None. Updates apply immediately to the in-memory store, with no `execute` bracketing.
+ *
+ * > [!WARNING]
+ * > The store applies a {@link Dataset} to queries only: an update given a dataset listing any graphs is rejected with
+ * > an `Error` and leaves the store unchanged, as Oxigraph offers no way to run an update against a dataset.
  *
  * @returns A {@link Repository} instance
  */
@@ -63,35 +73,37 @@ export function createOxiRepository(): Repository {
 
 	const repository: Repository = immutable({
 
-		ask(query) {
+		ask(query, dataset) {
 
-			return Promise.resolve(store.query(query) as boolean);
+			return Promise.resolve(store.query(query, options(dataset)) as boolean);
 
 		},
 
-		select(query) {
+		select(query, dataset) {
 
 			const blanks = createScope(blank);
 
-			return Promise.resolve((store.query(query) as Map<string, OxyTerm>[]).map(row =>
+			return Promise.resolve((store.query(query, options(dataset)) as Map<string, OxyTerm>[]).map(row =>
 				Object.fromEntries(Array.from(row, ([k, v]) => [variable(k), term(v, blanks)]))
 			));
 
 		},
 
-		construct(query) {
+		construct(query, dataset) {
 
 			const blanks = createScope(blank);
 
-			return Promise.resolve((store.query(query) as OxyQuad[]).map(quad =>
+			return Promise.resolve((store.query(query, options(dataset)) as OxyQuad[]).map(quad =>
 				[subject(quad.subject, blanks), predicate(quad.predicate), object(quad.object, blanks)]
 			));
 
 		},
 
-		update(update) {
+		update(update, dataset) {
 
-			return Promise.resolve(store.update(update));
+			return isEmpty(dataset)
+				? Promise.resolve(store.update(update))
+				: Promise.reject(new Error("unsupported update dataset"));
 
 		},
 
@@ -110,6 +122,30 @@ export function createOxiRepository(): Repository {
 	});
 
 	return repository;
+
+
+	/**
+	 * Checks whether a dataset lists no graphs, leaving the dataset declared by the request text in effect.
+	 */
+	function isEmpty({ default: graphs = [], named = [] }: Dataset = {}): boolean {
+		return graphs.length === 0 && named.length === 0;
+	}
+
+
+	/**
+	 * Converts a dataset into Oxigraph query options, overriding the dataset declared by the query text.
+	 */
+	function options(dataset: Dataset = {}): {
+
+		readonly default_graph?: readonly OxyNamedNode[];
+		readonly named_graphs?: readonly OxyNamedNode[];
+
+	} {
+		return isEmpty(dataset) ? {} : {
+			default_graph: (dataset.default ?? []).map(iri => namedNode(iri)),
+			named_graphs: (dataset.named ?? []).map(iri => namedNode(iri))
+		};
+	}
 
 
 	function subject(value: OxyTerm, blanks: Scope<Blank>): Subject {

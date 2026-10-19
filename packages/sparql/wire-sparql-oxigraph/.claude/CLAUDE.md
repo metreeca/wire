@@ -11,3 +11,4 @@ description: Development guidelines for the in-memory Oxigraph WASM connector.
 > [!NOTE]
 > This is a general-purpose `@metreeca/wire-sparql` connector, not merely a test fixture. It also serves as the
 > embedded, Docker-free backend for the `wire-sparql` conformance suite (`packages/wire-sparql/src/index.test.ts`).
+> Its own tests (`src/index.test.ts`) cover only what the conformance suite leaves out: how datasets are applied.

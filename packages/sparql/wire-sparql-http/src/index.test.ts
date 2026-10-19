@@ -15,8 +15,142 @@
  */
 
 import { blank, named, tagged, typed } from "@metreeca/trio";
-import { describe, expect, test } from "vitest";
+import { NTriples } from "@metreeca/trio/ntriples";
+import { SPARQLResults } from "@metreeca/wire-sparql";
+import { describe, expect, test, vi } from "vitest";
 import { decodeTerm, decodeTuples } from "./index.core.js";
+import { createHTTPRepository } from "./index.js";
+
+
+describe("createHTTPRepository", () => {
+
+	describe("datasets", () => {
+
+		const query = "http://example.org/sparql";
+
+		const g1 = "http://example.org/g1";
+		const g2 = "http://example.org/g2";
+		const n1 = "http://example.org/n1";
+
+
+		/**
+		 * Builds a stub endpoint answering every exchange with a minimal successful response.
+		 */
+		function stub() {
+
+			return vi.fn<typeof globalThis.fetch>(async (input, init) => {
+
+				const accept = new Request(input, init).headers.get("Accept");
+
+				return accept === SPARQLResults
+					? new Response(JSON.stringify({ head: {}, boolean: true, results: { bindings: [] } }), {
+						headers: { "Content-Type": SPARQLResults }
+					})
+					: accept === NTriples
+						? new Response("", { headers: { "Content-Type": NTriples } })
+						: new Response(null, { status: 204 });
+
+			});
+
+		}
+
+		/**
+		 * Lists the URL parameters of the exchanges a stub received, as name/value pairs in request order.
+		 */
+		function parameters(fetch: ReturnType<typeof stub>) {
+
+			return fetch.mock.calls.map(([input, init]) => [...new URL(new Request(input, init).url).searchParams]);
+
+		}
+
+
+		test("omits dataset parameters when no dataset is given", async () => {
+
+			const fetch = stub();
+			const http = createHTTPRepository({ query, fetch });
+
+			await http.ask("ask {}");
+			await http.update("insert data {}");
+
+			expect(parameters(fetch)).toEqual([[], []]);
+
+		});
+
+		test("omits dataset parameters when the dataset lists no graphs", async () => {
+
+			const fetch = stub();
+			const http = createHTTPRepository({ query, fetch });
+
+			await http.ask("ask {}", {});
+			await http.update("insert data {}", { default: [], named: [] });
+
+			expect(parameters(fetch)).toEqual([[], []]);
+
+		});
+
+		test("forwards query datasets as default and named graph parameters", async () => {
+
+			const fetch = stub();
+			const http = createHTTPRepository({ query, fetch });
+			const dataset = { default: [g1, g2], named: [n1] };
+
+			await http.ask("ask {}", dataset);
+			await http.select("select * {}", dataset);
+			await http.construct("construct {} where {}", dataset);
+
+			expect(parameters(fetch)).toEqual(Array(3).fill([
+				["default-graph-uri", g1],
+				["default-graph-uri", g2],
+				["named-graph-uri", n1]
+			]));
+
+		});
+
+		test("forwards update datasets as using graph parameters", async () => {
+
+			const fetch = stub();
+			const http = createHTTPRepository({ query, fetch });
+
+			await http.update("delete where { ?s ?p ?o }", { default: [g1, g2], named: [n1] });
+
+			expect(parameters(fetch)).toEqual([[
+				["using-graph-uri", g1],
+				["using-graph-uri", g2],
+				["using-named-graph-uri", n1]
+			]]);
+
+		});
+
+		test("extends endpoint URLs already carrying parameters", async () => {
+
+			const fetch = stub();
+			const http = createHTTPRepository({ query: `${query}?infer=false`, fetch });
+
+			await http.ask("ask {}", { named: [n1] });
+
+			expect(parameters(fetch)).toEqual([[
+				["infer", "false"],
+				["named-graph-uri", n1]
+			]]);
+
+		});
+
+		test("propagates endpoint errors on conflicting update datasets", async () => {
+
+			const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+				new Response("conflicting dataset", { status: 400, headers: { "Content-Type": "text/plain" } })
+			);
+
+			const http = createHTTPRepository({ query, fetch });
+
+			await expect(http.update("with <http://example.org/w> delete where { ?s ?p ?o }", { default: [g1] }))
+				.rejects.toMatchObject({ status: 400 });
+
+		});
+
+	});
+
+});
 
 
 describe("bindings", () => {

@@ -16,7 +16,7 @@
 
 import { named, rdf, type Triple, triple, typed } from "@metreeca/trio";
 import { describe, expect, test, vi } from "vitest";
-import type { Repository, Tuple } from "./index.js";
+import type { Dataset, Repository, Tuple } from "./index.js";
 import {
 	createBufferingRepository,
 	createLoggingRepository,
@@ -137,6 +137,9 @@ describe("factories", () => {
 
 describe("wrappers", () => {
 
+	const dataset: Dataset = { default: ["http://example.com/g"], named: ["http://example.com/n"] };
+
+
 	describe("createBufferingRepository", () => {
 
 		const rows = [tuple({ "?x": named("http://example.com/") })];
@@ -171,31 +174,44 @@ describe("wrappers", () => {
 			test("delegates ask to the underlying repository", async () => {
 				const { repository } = fakeRepository();
 				await expect(createBufferingRepository(repository).ask("ASK")).resolves.toBe(true);
-				expect(repository.ask).toHaveBeenCalledWith("ASK");
+				expect(repository.ask).toHaveBeenCalledWith("ASK", undefined);
 			});
 
 			test("delegates select to the underlying repository", async () => {
 				const { repository } = fakeRepository();
 				await expect(createBufferingRepository(repository).select("SELECT")).resolves.toEqual(rows);
-				expect(repository.select).toHaveBeenCalledWith("SELECT");
+				expect(repository.select).toHaveBeenCalledWith("SELECT", undefined);
 			});
 
 			test("delegates construct to the underlying repository", async () => {
 				const { repository } = fakeRepository();
 				await expect(createBufferingRepository(repository).construct("CONSTRUCT")).resolves.toEqual(statements);
-				expect(repository.construct).toHaveBeenCalledWith("CONSTRUCT");
+				expect(repository.construct).toHaveBeenCalledWith("CONSTRUCT", undefined);
 			});
 
 			test("delegates update directly to the underlying repository", async () => {
 				const { repository } = fakeRepository();
 				await createBufferingRepository(repository).update("INSERT");
-				expect(repository.update).toHaveBeenCalledWith("INSERT");
+				expect(repository.update).toHaveBeenCalledWith("INSERT", undefined);
 			});
 
 			test("delegates close to the underlying repository", async () => {
 				const { repository } = fakeRepository();
 				await createBufferingRepository(repository).close();
 				expect(repository.close).toHaveBeenCalledTimes(1);
+			});
+
+			test("delegates datasets to the underlying repository", async () => {
+				const { repository } = fakeRepository();
+				const buffering = createBufferingRepository(repository);
+				await buffering.ask("ASK", dataset);
+				await buffering.select("SELECT", dataset);
+				await buffering.construct("CONSTRUCT", dataset);
+				await buffering.update("INSERT", dataset);
+				expect(repository.ask).toHaveBeenCalledWith("ASK", dataset);
+				expect(repository.select).toHaveBeenCalledWith("SELECT", dataset);
+				expect(repository.construct).toHaveBeenCalledWith("CONSTRUCT", dataset);
+				expect(repository.update).toHaveBeenCalledWith("INSERT", dataset);
 			});
 
 		});
@@ -209,7 +225,32 @@ describe("wrappers", () => {
 					await client.update("U2");
 				});
 				expect(scope.update).toHaveBeenCalledTimes(1);
-				expect(scope.update).toHaveBeenCalledWith("U1; U2");
+				expect(scope.update).toHaveBeenCalledWith("U1; U2", undefined);
+			});
+
+			test("flushes consecutive updates sharing a dataset as a single update", async () => {
+				const { repository, scope } = fakeRepository();
+				await createBufferingRepository(repository).execute(async client => {
+					await client.update("U1", dataset);
+					await client.update("U2", { default: ["http://example.com/g"], named: ["http://example.com/n"] });
+				});
+				expect(scope.update).toHaveBeenCalledTimes(1);
+				expect(scope.update).toHaveBeenCalledWith("U1; U2", dataset);
+			});
+
+			test("splits the flush where the dataset changes, preserving order", async () => {
+				const { repository, scope } = fakeRepository();
+				await createBufferingRepository(repository).execute(async client => {
+					await client.update("U1");
+					await client.update("U2", dataset);
+					await client.update("U3", dataset);
+					await client.update("U4");
+				});
+				expect(scope.update.mock.calls).toEqual([
+					["U1", undefined],
+					["U2; U3", dataset],
+					["U4", undefined]
+				]);
 			});
 
 			test("issues no update when the task performs none", async () => {
@@ -225,9 +266,21 @@ describe("wrappers", () => {
 					await client.select("SELECT");
 					await client.construct("CONSTRUCT");
 				});
-				expect(scope.ask).toHaveBeenCalledWith("ASK");
-				expect(scope.select).toHaveBeenCalledWith("SELECT");
-				expect(scope.construct).toHaveBeenCalledWith("CONSTRUCT");
+				expect(scope.ask).toHaveBeenCalledWith("ASK", undefined);
+				expect(scope.select).toHaveBeenCalledWith("SELECT", undefined);
+				expect(scope.construct).toHaveBeenCalledWith("CONSTRUCT", undefined);
+			});
+
+			test("forwards query datasets to the transaction scope", async () => {
+				const { repository, scope } = fakeRepository();
+				await createBufferingRepository(repository).execute(async client => {
+					await client.ask("ASK", dataset);
+					await client.select("SELECT", dataset);
+					await client.construct("CONSTRUCT", dataset);
+				});
+				expect(scope.ask).toHaveBeenCalledWith("ASK", dataset);
+				expect(scope.select).toHaveBeenCalledWith("SELECT", dataset);
+				expect(scope.construct).toHaveBeenCalledWith("CONSTRUCT", dataset);
 			});
 
 			test("resolves to the value returned by the task", async () => {
@@ -304,6 +357,19 @@ describe("wrappers", () => {
 				await expect(createLoggingRepository(repository, vi.fn()).select("SELECT")).resolves.toEqual(rows);
 			});
 
+			test("delegates datasets to the underlying repository", async () => {
+				const { repository } = fakeRepository();
+				const logging = createLoggingRepository(repository, vi.fn());
+				await logging.ask("ASK", dataset);
+				await logging.select("SELECT", dataset);
+				await logging.construct("CONSTRUCT", dataset);
+				await logging.update("INSERT", dataset);
+				expect(repository.ask).toHaveBeenCalledWith("ASK", dataset);
+				expect(repository.select).toHaveBeenCalledWith("SELECT", dataset);
+				expect(repository.construct).toHaveBeenCalledWith("CONSTRUCT", dataset);
+				expect(repository.update).toHaveBeenCalledWith("INSERT", dataset);
+			});
+
 			test("logs closing the repository", async () => {
 				const { repository } = fakeRepository();
 				const logger = vi.fn<(message: string) => void>();
@@ -351,8 +417,18 @@ describe("wrappers", () => {
 					await client.ask("ASK");
 					await client.update("INSERT");
 				});
-				expect(scope.ask).toHaveBeenCalledWith("ASK");
-				expect(scope.update).toHaveBeenCalledWith("INSERT");
+				expect(scope.ask).toHaveBeenCalledWith("ASK", undefined);
+				expect(scope.update).toHaveBeenCalledWith("INSERT", undefined);
+			});
+
+			test("forwards transaction datasets to the underlying scope", async () => {
+				const { repository, scope } = fakeRepository();
+				await createLoggingRepository(repository, vi.fn()).execute(async client => {
+					await client.select("SELECT", dataset);
+					await client.update("INSERT", dataset);
+				});
+				expect(scope.select).toHaveBeenCalledWith("SELECT", dataset);
+				expect(scope.update).toHaveBeenCalledWith("INSERT", dataset);
 			});
 
 			test("resolves to the value returned by the task", async () => {

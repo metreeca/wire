@@ -37,6 +37,11 @@ See [@metreeca/wire-sparql] for the `Repository` query API (`ask`, `select`, `co
 >
 > This connector provides no transaction isolation: updates apply immediately to the in-memory store, with no `execute` bracketing.
 
+> [!WARNING]
+>
+> Datasets apply to queries only: an update given a dataset listing any graphs is rejected and leaves the store as it
+> was, since Oxigraph offers no way to run an update against an explicit dataset.
+
 [@metreeca/wire-sparql]: https://metreeca.github.io/wire/modules/_metreeca_wire-sparql.html
 
 # Support

@@ -35,9 +35,22 @@ import { resolve } from "@metreeca/core/resource";
 import { createFetch } from "@metreeca/http";
 import { type Problem, success } from "@metreeca/http/success";
 import { transport } from "@metreeca/http/transport";
-import { type Repository, SPARQLQuery, SPARQLUpdate } from "@metreeca/wire-sparql";
+import { type Dataset, type Repository, SPARQLQuery, SPARQLUpdate } from "@metreeca/wire-sparql";
 import { createHTTPRepository } from "@metreeca/wire-sparql-http";
 
+
+/**
+ * Names the SPARQL 1.1 Protocol parameters carrying a {@link Dataset}, forwarded onto the transaction endpoint.
+ */
+const DatasetParameters: ReadonlySet<string> = new Set([
+	"default-graph-uri",
+	"named-graph-uri",
+	"using-graph-uri",
+	"using-named-graph-uri"
+]);
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Creates a {@link Repository} backed by an
@@ -49,7 +62,7 @@ import { createHTTPRepository } from "@metreeca/wire-sparql-http";
  * Operations issued **outside** an enclosing `execute` task are dispatched to the canonical SPARQL 1.1 Protocol
  * endpoints (`/repositories/{id}` for query, `/repositories/{id}/statements` for update) by delegating to a
  * {@link createHTTPRepository} instance, so a one-off `ask` / `update` does not pay the start-and-commit roundtrip
- * cost.
+ * cost. A {@link Dataset} is honoured both inside and outside `execute` tasks, as the same protocol parameters.
  *
  * > [!IMPORTANT]
  * > **Transaction Isolation** — Determined by the target RDF4J repository.
@@ -209,7 +222,9 @@ export function createRDF4JRepository({
 			const contentType = action === "UPDATE" ? SPARQLUpdate : SPARQLQuery;
 			const accept = request.headers.get("Accept");
 
-			return fetch(configure(`${txn}?action=${action}`), {
+			const dataset = [...new URL(request.url).searchParams].filter(([name]) => DatasetParameters.has(name));
+
+			return fetch(configure(`${txn}?${new URLSearchParams([["action", action], ...dataset])}`), {
 				method: "PUT",
 				headers: accept === null
 					? { "Content-Type": contentType }

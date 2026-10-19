@@ -35,6 +35,7 @@
  * **Data model**
  *
  * - {@link SPARQL} — query, update, or syntactic fragment as serialised text
+ * - {@link Dataset} — RDF dataset overriding the one declared by a query or update
  * - {@link Tuple} — `SELECT` query-solution mapping
  * - {@link Pattern} — triple pattern admitting {@link Variable | variables}
  * - {@link Variable} — allocated `?`-prefixed SPARQL variable
@@ -59,8 +60,9 @@
  */
 
 import { error, isNumber, isString } from "@metreeca/core";
+import { type IRI } from "@metreeca/core/resource";
 import { dedent } from "@metreeca/core/strings";
-import { immutable } from "@metreeca/core/values";
+import { equals, immutable } from "@metreeca/core/values";
 import { type Predicate, type Subject, type Term, type Triple } from "@metreeca/trio";
 import { update } from "./builder.js";
 
@@ -236,35 +238,50 @@ export interface RepositoryClient {
 	 * Execute an ASK query.
 	 *
 	 * @param query - The SPARQL ASK query
+	 * @param dataset - The {@link Dataset} to query, overriding the `FROM` and `FROM NAMED` clauses of `query`; when
+	 * 		omitted, `query` runs against the dataset it declares, or against the default dataset of the backend
 	 *
 	 * @returns A promise resolving to the boolean query result
 	 */
-	ask(query: SPARQL): Promise<boolean>;
+	ask(query: SPARQL, dataset?: Dataset): Promise<boolean>;
 
 	/**
 	 * Execute a SELECT query.
 	 *
 	 * @param query - The SPARQL SELECT query
+	 * @param dataset - The {@link Dataset} to query, overriding the `FROM` and `FROM NAMED` clauses of `query`; when
+	 * 		omitted, `query` runs against the dataset it declares, or against the default dataset of the backend
 	 *
 	 * @returns A promise resolving to the solution {@link Tuple | tuples}, in solution-sequence order
 	 */
-	select(query: SPARQL): Promise<readonly Tuple[]>;
+	select(query: SPARQL, dataset?: Dataset): Promise<readonly Tuple[]>;
 
 	/**
 	 * Execute a CONSTRUCT query.
 	 *
 	 * @param query - The SPARQL CONSTRUCT query
+	 * @param dataset - The {@link Dataset} to query, overriding the `FROM` and `FROM NAMED` clauses of `query`; when
+	 * 		omitted, `query` runs against the dataset it declares, or against the default dataset of the backend
 	 *
 	 * @returns A promise resolving to the constructed RDF {@link Triple | triples}
 	 */
-	construct(query: SPARQL): Promise<readonly Triple[]>;
+	construct(query: SPARQL, dataset?: Dataset): Promise<readonly Triple[]>;
 
 	/**
 	 * Execute a SPARQL UPDATE operation.
 	 *
+	 * > [!WARNING]
+	 * > A `dataset` is admitted only for updates declaring none of their own: SPARQL 1.1 Protocol forbids combining it
+	 * > with `USING`, `USING NAMED` or `WITH` clauses, and the backend rejects such a request with its own error.
+	 *
 	 * @param update - The SPARQL UPDATE request
+	 * @param dataset - The {@link Dataset} matched by the `WHERE` clauses of `update`; when omitted, `update` runs
+	 * 		against the dataset it declares, or against the default dataset of the backend
+	 *
+	 * @see {@link https://www.w3.org/TR/sparql11-protocol/#update-dataset SPARQL 1.1 Protocol §2.2.3 — Specifying
+	 * 		an RDF Dataset}
 	 */
-	update(update: SPARQL): Promise<void>;
+	update(update: SPARQL, dataset?: Dataset): Promise<void>;
 
 }
 
@@ -282,6 +299,30 @@ export interface RepositoryClient {
  * @see {@link https://www.w3.org/TR/sparql11-update/ SPARQL 1.1 Update}
  */
 export type SPARQL = string
+
+/**
+ * A SPARQL RDF dataset.
+ *
+ * Names the graphs an operation runs against, overriding the dataset declared by the request text. A dataset that
+ * lists no graphs in either property leaves the request's own dataset in effect.
+ *
+ * @see {@link https://www.w3.org/TR/sparql11-query/#rdfDataset SPARQL 1.1 Query §13 — RDF Dataset}
+ * @see {@link https://www.w3.org/TR/sparql11-protocol/#dataset SPARQL 1.1 Protocol §2.1.4 — Specifying an RDF
+ * 		Dataset}
+ */
+export type Dataset = {
+
+	/**
+	 * The graphs merged into the default graph; if omitted while `named` lists graphs, the default graph is empty.
+	 */
+	readonly default?: readonly IRI[];
+
+	/**
+	 * The graphs available as named graphs; if omitted while `default` lists graphs, there are no named graphs.
+	 */
+	readonly named?: readonly IRI[];
+
+};
 
 /**
  * A SPARQL query-solution mapping.
@@ -429,45 +470,55 @@ export function variable(name?: number | string): Variable {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Wraps a {@link Repository} to coalesce a transaction's updates into a single request.
+ * Wraps a {@link Repository} to coalesce a transaction's updates into as few requests as possible.
  *
  * Returns a repository that delegates every operation to `repository` unchanged outside a transaction. Within
  * {@link Repository.execute | execute}, queries still run directly against the transaction scope, but updates are
- * buffered rather than issued: on successful completion the buffered updates are flushed as one `;`-joined update, and
- * if the task issues none, no update runs at all. A task that throws or rejects discards the buffer, so no partial
- * update reaches the backend.
+ * buffered rather than issued. On successful completion, the buffered updates are flushed in issue order. Consecutive
+ * updates targeting equal {@link Dataset | datasets} are joined with `;` into a single update.
+ *
+ * A task that issues no updates runs none, and a task that throws or rejects discards the buffer, so no partial
+ * update reaches the backend. A flush failing part-way leaves the earlier updates applied, unless the wrapped
+ * repository rolls back the enclosing transaction, as a repository with native transactions does.
  *
  * @param repository - The repository to wrap
  *
- * @returns An immutable {@link Repository} that buffers a transaction's updates and flushes them as a single update on
- * commit
+ * @returns An immutable {@link Repository} that buffers a transaction's updates and flushes them coalesced on commit
  */
 export function createBufferingRepository(repository: Repository): Repository {
+
+	type Buffered = {
+
+		readonly updates: readonly SPARQL[]
+		readonly dataset?: Dataset
+
+	}
+
 	return immutable({
 
-		ask: query => repository.ask(query),
-		select: query => repository.select(query),
-		construct: query => repository.construct(query),
-		update: update => repository.update(update),
+		ask: (query, dataset) => repository.ask(query, dataset),
+		select: (query, dataset) => repository.select(query, dataset),
+		construct: (query, dataset) => repository.construct(query, dataset),
+		update: (update, dataset) => repository.update(update, dataset),
 
-		// within a transaction, accumulate the updates and flush them as a single update on commit
+		// within a transaction, accumulate the updates and flush them on commit, one update per run sharing a dataset
 
 		execute: task => repository.execute(async scope => {
 
-			const updates: SPARQL[] = [];
+			const buffer: Buffered[] = []; // sink for the updates issued by the task through its client
 
 			const value = await task(immutable({
 
-				ask: query => scope.ask(query),
-				select: query => scope.select(query),
-				construct: query => scope.construct(query),
-				update: update => Promise.resolve(void updates.push(update))
+				ask: (query, dataset) => scope.ask(query, dataset),
+				select: (query, dataset) => scope.select(query, dataset),
+				construct: (query, dataset) => scope.construct(query, dataset),
+				update: (update, dataset) => Promise.resolve(void buffer.push({ updates: [update], dataset }))
 
 			}));
 
-			if ( updates.length > 0 ) {
-				await scope.update(update(...updates));
-			}
+			await coalesce(buffer).reduce((flushed, run) => flushed.then(() =>
+				scope.update(update(...run.updates), run.dataset)
+			), Promise.resolve());
 
 			return value;
 
@@ -476,6 +527,20 @@ export function createBufferingRepository(repository: Repository): Repository {
 		close: () => repository.close()
 
 	});
+
+
+	function coalesce(buffer: readonly Buffered[]): readonly Buffered[] {
+		return buffer.reduce<readonly Buffered[]>((runs, next) => {
+
+			const last = runs.at(-1);
+
+			return last !== undefined && equals(last.dataset, next.dataset)
+				? [...runs.slice(0, -1), { ...last, updates: [...last.updates, ...next.updates] }]
+				: [...runs, next];
+
+		}, []);
+	}
+
 }
 
 /**
@@ -540,33 +605,33 @@ export function createLoggingRepository(repository: Repository, logger: (message
 
 		return immutable({
 
-			ask(query) {
+			ask(query, dataset) {
 
-				return time(() => client.ask(query), (_, elapsed) =>
+				return time(() => client.ask(query, dataset), (_, elapsed) =>
 					logger(`executed query in <${millis(elapsed)}> ms / ${query}`)
 				);
 
 			},
 
-			select(query) {
+			select(query, dataset) {
 
-				return time(() => client.select(query), (_, elapsed) =>
+				return time(() => client.select(query, dataset), (_, elapsed) =>
 					logger(`executed query in <${millis(elapsed)}> ms / ${query}`)
 				);
 
 			},
 
-			construct(query) {
+			construct(query, dataset) {
 
-				return time(() => client.construct(query), (_, elapsed) =>
+				return time(() => client.construct(query, dataset), (_, elapsed) =>
 					logger(`executed query in <${millis(elapsed)}> ms / ${query}`)
 				);
 
 			},
 
-			update(update) {
+			update(update, dataset) {
 
-				return time(() => client.update(update), (_, elapsed) =>
+				return time(() => client.update(update, dataset), (_, elapsed) =>
 					logger(`executed update in <${millis(elapsed)}> ms / ${update}`)
 				);
 

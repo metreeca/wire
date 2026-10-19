@@ -11,6 +11,6 @@ description: Development guidelines for the SPARQL 1.1 Protocol HTTP connector.
   management protocol for atomic multi-statement updates
 
 > [!NOTE]
-> This connector is a pure `@metreeca/wire-sparql` implementation with no test of its own; its conformance is exercised
-> from `wire-sparql` (`packages/wire-sparql/src/index.test.ts`), where the **Verified Backends** table is also
-> maintained.
+> This connector is a pure `@metreeca/wire-sparql` implementation, whose conformance is exercised from `wire-sparql`
+> (`packages/wire-sparql/src/index.test.ts`), where the **Verified Backends** table is also maintained. Its own tests
+> (`src/index.test.ts`) run against a stub `fetch` and cover only the result decoders and the dataset parameters.

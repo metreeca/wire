@@ -79,6 +79,21 @@ const triples = await repository.construct(`
 await repository.close();
 ```
 
+## Targeting a Dataset
+
+Pass a `Dataset` as second argument to run a query or update against explicit graphs instead of those it declares:
+
+```typescript
+const tuples = await repository.select(`SELECT ?name { ?product <https://schema.org/name> ?name }`, {
+	default: ["https://example.org/catalog"]
+});
+```
+
+> [!WARNING]
+>
+> An update given a dataset must declare none of its own through `USING`, `USING NAMED` or `WITH` clauses. Backends
+> reject the combination, and some connectors do not support update datasets at all.
+
 ## Transactions
 
 Bracket related operations with `execute`: the task runs on a per-call `RepositoryClient` and commits together, or rolls
@@ -107,19 +122,19 @@ of [@metreeca/trio](https://github.com/metreeca/trio), and parsing or serialisin
 A minimal connector has the shape:
 
 ```typescript
-import type { Repository, SPARQL } from "@metreeca/wire-sparql";
+import type { Dataset, Repository, SPARQL } from "@metreeca/wire-sparql";
 
 function createMyRepository(/* endpoint, client, … */): Repository {
 
 	const repository: Repository = {
 
-		ask: async (query: SPARQL) => { /* run ASK; return the boolean */ },
+		ask: async (query: SPARQL, dataset?: Dataset) => { /* run ASK; return the boolean */ },
 
-		select: async (query: SPARQL) => { /* run SELECT; map bindings to Tuples of Terms */ },
+		select: async (query: SPARQL, dataset?: Dataset) => { /* run SELECT; map bindings to Tuples of Terms */ },
 
-		construct: async (query: SPARQL) => { /* run CONSTRUCT; map statements to Triples */ },
+		construct: async (query: SPARQL, dataset?: Dataset) => { /* run CONSTRUCT; map statements to Triples */ },
 
-		update: async (update: SPARQL) => { /* apply the UPDATE */ },
+		update: async (update: SPARQL, dataset?: Dataset) => { /* apply the UPDATE */ },
 
 		execute: async task => task(repository),  // or bracket the task in a backend transaction
 

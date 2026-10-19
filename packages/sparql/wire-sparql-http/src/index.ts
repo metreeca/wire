@@ -34,7 +34,14 @@ import { createFetch } from "@metreeca/http";
 import { type Problem, success } from "@metreeca/http/success";
 import { transport } from "@metreeca/http/transport";
 import { decodeNTriples, NTriples } from "@metreeca/trio/ntriples";
-import { type Repository, type SPARQL, SPARQLQuery, SPARQLResults, SPARQLUpdate } from "@metreeca/wire-sparql";
+import {
+	type Dataset,
+	type Repository,
+	type SPARQL,
+	SPARQLQuery,
+	SPARQLResults,
+	SPARQLUpdate
+} from "@metreeca/wire-sparql";
 import { decodeTuples, type SPARQLBindings, type SPARQLBoolean } from "./index.core.js";
 
 
@@ -42,7 +49,10 @@ import { decodeTuples, type SPARQLBindings, type SPARQLBoolean } from "./index.c
  * Creates an HTTP-based {@link Repository} backed by a
  * {@link https://www.w3.org/TR/sparql11-protocol/ SPARQL 1.1 Protocol} endpoint.
  *
- * Each query and update is dispatched eagerly as a single HTTP request.
+ * Each query and update is dispatched eagerly as a single HTTP request. A {@link Dataset} is sent as protocol
+ * parameters added to any the endpoint URL already carries: `default-graph-uri` and `named-graph-uri` on queries,
+ * `using-graph-uri` and `using-named-graph-uri` on updates. An endpoint rejecting an update that declares its own
+ * dataset as well fails like any other non-2xx response, rejecting with a {@link Problem} carrying the wire status.
  *
  * > [!IMPORTANT]
  * > **Transaction Isolation** — None. The SPARQL 1.1 Protocol exposes no transaction primitives.
@@ -89,27 +99,27 @@ export function createHTTPRepository({
 
 	const repository: Repository = immutable({
 
-		async ask(query) {
+		async ask(query, dataset) {
 
 			const result = await json<SPARQLBoolean>(
-				await post(queryURL, SPARQLQuery, query, SPARQLResults)
+				await post(queries(dataset), SPARQLQuery, query, SPARQLResults)
 			);
 
 			return result.boolean;
 
 		},
 
-		async select(query) {
+		async select(query, dataset) {
 
 			return decodeTuples(await json<SPARQLBindings>(
-				await post(queryURL, SPARQLQuery, query, SPARQLResults)
+				await post(queries(dataset), SPARQLQuery, query, SPARQLResults)
 			));
 
 		},
 
-		async construct(query) {
+		async construct(query, dataset) {
 
-			const response = await post(queryURL, SPARQLQuery, query, NTriples);
+			const response = await post(queries(dataset), SPARQLQuery, query, NTriples);
 			const contentType = response.headers.get("Content-Type") ?? "";
 
 			if ( contentType.startsWith(NTriples) ) {
@@ -127,9 +137,9 @@ export function createHTTPRepository({
 
 		},
 
-		update(update) {
+		update(update, dataset) {
 
-			return post(updateURL, SPARQLUpdate, update);
+			return post(updates(dataset), SPARQLUpdate, update);
 
 		},
 
@@ -149,6 +159,34 @@ export function createHTTPRepository({
 
 	return repository;
 
+
+	/**
+	 * Targets the query endpoint at a dataset, as the `default-graph-uri` and `named-graph-uri` parameters.
+	 */
+	function queries(dataset: Dataset = {}): string {
+		return target(queryURL, [
+			...(dataset.default ?? []).map(iri => ["default-graph-uri", iri]),
+			...(dataset.named ?? []).map(iri => ["named-graph-uri", iri])
+		]);
+	}
+
+	/**
+	 * Targets the update endpoint at a dataset, as the `using-graph-uri` and `using-named-graph-uri` parameters.
+	 */
+	function updates(dataset: Dataset = {}): string {
+		return target(updateURL, [
+			...(dataset.default ?? []).map(iri => ["using-graph-uri", iri]),
+			...(dataset.named ?? []).map(iri => ["using-named-graph-uri", iri])
+		]);
+	}
+
+	/**
+	 * Extends an endpoint URL, possibly already carrying URL parameters, with further parameters.
+	 */
+	function target(url: string, parameters: readonly string[][]): string {
+		return parameters.length === 0 ? url
+			: `${url}${url.includes("?") ? "&" : "?"}${new URLSearchParams([...parameters])}`;
+	}
 
 	async function post(url: string, contentType: string, body: SPARQL): Promise<void>;
 	async function post(url: string, contentType: string, body: SPARQL, accept: string): Promise<Response>;
