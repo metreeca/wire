@@ -67,9 +67,7 @@ import { createHTTPRepository } from "@metreeca/wire-sparql-http";
  *   form holding an isolated surrogate, a non-conforming language tag), as well as for an unexpected SPARQL Results
  *   JSON term
  *
- * Rollback (`DELETE` on the transaction URL) is best-effort: a network or 5xx failure on rollback
- * is swallowed so the original task error propagates; without best-effort handling a transient
- * network glitch on the rollback would mask the real cause of the task failure.
+ * Rollback is best-effort: a network or 5xx failure on rollback is swallowed, so the original task error propagates.
  *
  * @param options - Server URL and repository identifier
  * @param options.server - RDF4J Server base URL, for example `http://localhost:8080/rdf4j-server`

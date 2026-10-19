@@ -7,11 +7,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.12.0](https://github.com/metreeca/wire/compare/v0.11.2...HEAD)
 
+### Added
+
+- `@metreeca/wire-sparql` — `./builder` `construct` and `describe` query forms, `base` declaration, `neg` negation
+- `@metreeca/wire-sparql` — `./builder` graph management operations `load`, `clear`, `create`, `drop`, `copy`, `move`
+  and `aad`, with `silent` producing the `SILENT` form of these operations and of `service` blocks
+- `@metreeca/wire-sparql` — `./builder` `data` block, carrying the ground triples of a `deleet` or `insert` clause
+
 ### Changed
 
 - Upgrade `@metreeca/core` to `^0.13.0`
 - Upgrade `@metreeca/http` to `^0.5.0`
 - Upgrade `@metreeca/trio` to `^0.2.0`
+- `@metreeca/wire-sparql` — `./builder` `deleet` and `insert` take variadic clauses selecting the operation form, as
+  in `insert(data(…))` or `deleet(group(…), where(…))`, instead of a content and an optional `where` argument
+- `@metreeca/wire-sparql` — `./builder` `distinct` and `reduced` return the empty fragment for no expressions
+- `@metreeca/wire-sparql` — `./builder` `and`, `or`, `seq` and `alt` bracket the result when several operands
+  survive, so they nest inside any enclosing expression or property path whatever its operator precedence
 
 ## [0.11.2](https://github.com/metreeca/wire/compare/v0.11.1...v0.11.2) - 2026-10-14
 

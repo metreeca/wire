@@ -237,7 +237,7 @@ export interface RepositoryClient {
 	 *
 	 * @param query - The SPARQL ASK query
 	 *
-	 * @returns A promise resolving to true if the query pattern matches; false otherwise
+	 * @returns A promise resolving to the boolean query result
 	 */
 	ask(query: SPARQL): Promise<boolean>;
 
@@ -299,12 +299,9 @@ export type Tuple = {
 };
 
 /**
- * A SPARQL triple pattern, as a subject/predicate/object statement with optional {@link Variable | variables}.
+ * A SPARQL triple pattern.
  *
- * Each position generalises the corresponding {@link Triple} position by also admitting a {@link Variable}: the subject
- * is a variable or a {@link Subject}, either a named resource or a blank node; the predicate is a variable or a
- * {@link Predicate}, that is a named resource; the object is a variable or any {@link Term}. Unlike a ground
- * {@link Triple}, a pattern may leave positions unbound for matching. Construct one with {@link pattern}.
+ * A {@link Triple} whose positions also admit a {@link Variable}, as constructed by {@link pattern}.
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#QSynTriples SPARQL 1.1 Triple Patterns}
  */
@@ -391,9 +388,6 @@ export function tuple(tuple: Tuple): Tuple {
 
 /**
  * Creates a SPARQL triple {@link Pattern}.
- *
- * Assembles a subject/predicate/object pattern from ready positions, each admitting a {@link Variable} in addition to
- * the corresponding {@link Triple} position.
  *
  * @param subject - The subject position: a {@link Variable} or a {@link Subject}
  * @param predicate - The predicate position: a {@link Variable} or a {@link Predicate}

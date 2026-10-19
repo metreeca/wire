@@ -23,23 +23,33 @@ import {
 } from "@metreeca/trio";
 import { describe, expect, it } from "vitest";
 import {
+	aad,
 	abs,
 	add,
 	alt,
 	anchor,
 	and,
 	ask,
+	base,
 	blank,
 	bnode,
 	boolean,
 	call,
 	ceil,
+	clear,
 	coalesce,
 	concat,
+	construct,
 	contains,
+	copy,
+	create,
+	data,
 	day,
+	deleet,
+	describe as describeQuery,
 	distinct,
 	div,
+	drop,
 	encodeForUri,
 	exists,
 	floor,
@@ -51,16 +61,20 @@ import {
 	groupBy,
 	having,
 	hours,
+	insert,
 	iri,
 	isIn,
 	isNotIn,
 	lcase,
 	limit,
+	load,
 	md5,
 	minus,
 	minutes,
 	month,
+	move,
 	mul,
+	neg,
 	nexists,
 	nil,
 	none,
@@ -79,12 +93,15 @@ import {
 	replace,
 	round,
 	seconds,
+	select,
 	seq,
 	service,
 	sha1,
 	sha256,
 	sha384,
 	sha512,
+	silent,
+	star,
 	strafter,
 	strbefore,
 	strdt,
@@ -119,6 +136,22 @@ import {
 
 describe("generators", () => {
 
+	describe("prologue", () => {
+
+		describe("base", () => {
+
+			it("should render a base declaration serialising the IRI", async () => {
+				expect(base("https://example.org/")).toBe("base <https://example.org/>");
+			});
+
+			it("should reject malformed IRIs", async () => {
+				expect(() => base("a b")).toThrow(RangeError);
+			});
+
+		});
+
+	});
+
 	describe("updates", () => {
 
 		describe("update", () => {
@@ -133,6 +166,74 @@ describe("generators", () => {
 
 			it("should yield the empty request when every operation is empty", async () => {
 				expect(update(nil(), nil())).toBe("");
+			});
+
+		});
+
+		describe("deleet", () => {
+
+			it("should prefix a data block", async () => {
+				expect(deleet(data("a", "b"))).toBe("delete data { a b }");
+			});
+
+			it("should prefix a template and its where clause", async () => {
+				expect(deleet(group("a"), where("b"))).toBe("delete { a } where { b }");
+			});
+
+			it("should prefix a where clause", async () => {
+				expect(deleet(where("a"))).toBe("delete where { a }");
+			});
+
+			it("should compose with an insert template", async () => {
+				expect(fragment(deleet(group("a")), insert(group("b")), using("urn:g"), where("c")))
+					.toBe("delete { a } insert { b } using <urn:g> where { c }");
+			});
+
+			it("should drop empty clauses", async () => {
+				expect(deleet(nil(), [where("a")])).toBe("delete where { a }");
+			});
+
+			it("should yield the empty fragment for no surviving clauses", async () => {
+				expect(deleet()).toBe("");
+				expect(deleet(data())).toBe("");
+			});
+
+		});
+
+		describe("insert", () => {
+
+			it("should prefix a data block", async () => {
+				expect(insert(data("a", "b"))).toBe("insert data { a b }");
+			});
+
+			it("should prefix a template and its where clause", async () => {
+				expect(insert(group("a"), where("b"))).toBe("insert { a } where { b }");
+			});
+
+			it("should drop empty clauses", async () => {
+				expect(insert(nil(), group("a"), where("b"))).toBe("insert { a } where { b }");
+			});
+
+			it("should yield the empty fragment for no surviving clauses", async () => {
+				expect(insert()).toBe("");
+				expect(insert(data([]))).toBe("");
+			});
+
+		});
+
+		describe("data", () => {
+
+			it("should wrap the triples in a data block", async () => {
+				expect(data("a", ["b", "c"])).toBe("data { a b c }");
+			});
+
+			it("should drop empty triples", async () => {
+				expect(data("a", nil(), "b")).toBe("data { a b }");
+			});
+
+			it("should yield the empty fragment for no surviving triples", async () => {
+				expect(data()).toBe("");
+				expect(data(nil())).toBe("");
 			});
 
 		});
@@ -198,12 +299,190 @@ describe("generators", () => {
 
 	});
 
+	describe("graph management", () => {
+
+		describe("load", () => {
+
+			it("should load into the default graph by default", async () => {
+				expect(load("urn:d")).toBe("load <urn:d>");
+			});
+
+			it("should load into a named graph", async () => {
+				expect(load("urn:d", "urn:g")).toBe("load <urn:d> into graph <urn:g>");
+			});
+
+			it("should reject malformed IRIs", async () => {
+				expect(() => load("a b")).toThrow(RangeError);
+				expect(() => load("urn:d", "a b")).toThrow(RangeError);
+			});
+
+		});
+
+		describe("clear", () => {
+
+			it("should clear a named graph", async () => {
+				expect(clear("urn:g")).toBe("clear graph <urn:g>");
+			});
+
+			it("should read keywords as graph selectors", async () => {
+				expect(clear("default")).toBe("clear default");
+				expect(clear("named")).toBe("clear named");
+				expect(clear("all")).toBe("clear all");
+			});
+
+			it("should address relative IRIs prefixed to escape the keywords", async () => {
+				expect(clear("./default")).toBe("clear graph <./default>");
+			});
+
+			it("should reject malformed IRIs", async () => {
+				expect(() => clear("a b")).toThrow(RangeError);
+			});
+
+		});
+
+		describe("create", () => {
+
+			it("should create a named graph", async () => {
+				expect(create("urn:g")).toBe("create graph <urn:g>");
+			});
+
+			it("should reject malformed IRIs", async () => {
+				expect(() => create("a b")).toThrow(RangeError);
+			});
+
+		});
+
+		describe("drop", () => {
+
+			it("should drop a named graph", async () => {
+				expect(drop("urn:g")).toBe("drop graph <urn:g>");
+			});
+
+			it("should read keywords as graph selectors", async () => {
+				expect(drop("default")).toBe("drop default");
+				expect(drop("named")).toBe("drop named");
+				expect(drop("all")).toBe("drop all");
+			});
+
+			it("should reject malformed IRIs", async () => {
+				expect(() => drop("a b")).toThrow(RangeError);
+			});
+
+		});
+
+		describe("copy", () => {
+
+			it("should copy between named graphs", async () => {
+				expect(copy("urn:s", "urn:t")).toBe("copy graph <urn:s> to graph <urn:t>");
+			});
+
+			it("should read the default keyword as the default graph", async () => {
+				expect(copy("default", "urn:t")).toBe("copy default to graph <urn:t>");
+				expect(copy("urn:s", "default")).toBe("copy graph <urn:s> to default");
+			});
+
+			it("should read the other keywords as relative IRIs", async () => {
+				expect(copy("named", "all")).toBe("copy graph <named> to graph <all>");
+			});
+
+			it("should reject malformed IRIs", async () => {
+				expect(() => copy("a b", "urn:t")).toThrow(RangeError);
+				expect(() => copy("urn:s", "a b")).toThrow(RangeError);
+			});
+
+		});
+
+		describe("move", () => {
+
+			it("should move between named graphs", async () => {
+				expect(move("urn:s", "urn:t")).toBe("move graph <urn:s> to graph <urn:t>");
+			});
+
+			it("should read the default keyword as the default graph", async () => {
+				expect(move("default", "urn:t")).toBe("move default to graph <urn:t>");
+			});
+
+		});
+
+		describe("aad", () => {
+
+			it("should add between named graphs", async () => {
+				expect(aad("urn:s", "urn:t")).toBe("add graph <urn:s> to graph <urn:t>");
+			});
+
+			it("should read the default keyword as the default graph", async () => {
+				expect(aad("default", "urn:t")).toBe("add default to graph <urn:t>");
+			});
+
+		});
+
+		describe("silent", () => {
+
+			it("should insert the modifier after the operation keyword", async () => {
+				expect(silent(load("urn:d", "urn:g"))).toBe("load silent <urn:d> into graph <urn:g>");
+				expect(silent(clear("all"))).toBe("clear silent all");
+				expect(silent(create("urn:g"))).toBe("create silent graph <urn:g>");
+				expect(silent(drop("urn:g"))).toBe("drop silent graph <urn:g>");
+				expect(silent(copy("urn:s", "urn:t"))).toBe("copy silent graph <urn:s> to graph <urn:t>");
+				expect(silent(move("urn:s", "default"))).toBe("move silent graph <urn:s> to default");
+				expect(silent(aad("urn:s", "default"))).toBe("add silent graph <urn:s> to default");
+			});
+
+			it("should insert the modifier after the service keyword", async () => {
+				expect(silent(service("<urn:s>", "a"))).toBe("service silent <urn:s> { a }");
+			});
+
+			it("should preserve the empty fragment", async () => {
+				expect(silent(nil())).toBe("");
+				expect(silent(service("<urn:s>"))).toBe("");
+			});
+
+		});
+
+	});
+
 	describe("queries", () => {
 
 		describe("ask", () => {
 
 			it("should accept a single array argument", async () => {
 				expect(ask(["a", "b"])).toBe("ask a b");
+			});
+
+		});
+
+		describe("select", () => {
+
+			it("should render the projection followed by the clauses", async () => {
+				expect(select(["?x", "?y"], where("a"))).toBe("select ?x ?y where { a }");
+			});
+
+		});
+
+		describe("construct", () => {
+
+			it("should wrap the template followed by the clauses", async () => {
+				expect(construct("a", where("b"), limit(10))).toBe("construct { a } where { b } limit 10");
+			});
+
+			it("should join a template list into a fragment", async () => {
+				expect(construct(["a", nil(), "b"], where("c"))).toBe("construct { a b } where { c }");
+			});
+
+		});
+
+		describe("describe", () => {
+
+			it("should render the resources followed by the clauses", async () => {
+				expect(describeQuery("?x", where("a"))).toBe("describe ?x where { a }");
+			});
+
+			it("should join a resource list into a fragment", async () => {
+				expect(describeQuery(["?x", nil(), "<urn:r>"], where("a"))).toBe("describe ?x <urn:r> where { a }");
+			});
+
+			it("should render a clause-less query over IRIs", async () => {
+				expect(describeQuery("<urn:r>")).toBe("describe <urn:r>");
 			});
 
 		});
@@ -216,11 +495,12 @@ describe("generators", () => {
 
 			it("should drop empty expressions", async () => {
 				expect(distinct("a", nil(), "b")).toBe("distinct a b");
-				expect(distinct(nil())).toBe("distinct");
 			});
 
-			it("should yield the bare keyword for no expressions", async () => {
-				expect(distinct([])).toBe("distinct");
+			it("should yield the empty fragment for no surviving expressions", async () => {
+				expect(distinct()).toBe("");
+				expect(distinct([])).toBe("");
+				expect(distinct(nil())).toBe("");
 			});
 
 		});
@@ -233,11 +513,12 @@ describe("generators", () => {
 
 			it("should drop empty expressions", async () => {
 				expect(reduced("a", nil(), "b")).toBe("reduced a b");
-				expect(reduced(nil())).toBe("reduced");
 			});
 
-			it("should yield the bare keyword for no expressions", async () => {
-				expect(reduced([])).toBe("reduced");
+			it("should yield the empty fragment for no surviving expressions", async () => {
+				expect(reduced()).toBe("");
+				expect(reduced([])).toBe("");
+				expect(reduced(nil())).toBe("");
 			});
 
 		});
@@ -436,6 +717,7 @@ describe("generators", () => {
 
 		});
 
+
 		describe("values", () => {
 
 			it("should drop empty variables and row terms", async () => {
@@ -474,16 +756,36 @@ describe("generators", () => {
 
 		describe("seq", () => {
 
-			it("should drop empty elements", async () => {
-				expect(seq("a", nil(), "b")).toBe("a/b");
+			it("should bracket several elements", async () => {
+				expect(seq("a", nil(), "b")).toBe("(a/b)");
+			});
+
+			it("should return a single element unchanged", async () => {
+				expect(seq("a", nil())).toBe("a");
+			});
+
+			it("should yield the empty fragment for no surviving elements", async () => {
+				expect(seq(nil())).toBe("");
+			});
+
+			it("should bind as a whole under a quantifier", async () => {
+				expect(star(seq("a", "b"))).toBe("(a/b)*");
 			});
 
 		});
 
 		describe("alt", () => {
 
-			it("should drop empty elements", async () => {
-				expect(alt("a", nil(), "b")).toBe("a|b");
+			it("should bracket several elements", async () => {
+				expect(alt("a", nil(), "b")).toBe("(a|b)");
+			});
+
+			it("should return a single element unchanged", async () => {
+				expect(alt("a", nil())).toBe("a");
+			});
+
+			it("should yield the empty fragment for no surviving elements", async () => {
+				expect(alt(nil())).toBe("");
 			});
 
 		});
@@ -503,20 +805,36 @@ describe("generators", () => {
 
 		describe("and", () => {
 
-			it("should flatten an array argument", async () => {
-				expect(and(["a", "b", "c"])).toBe("a && b && c");
+			it("should bracket several conditions", async () => {
+				expect(and(["a", "b", "c"])).toBe("(a && b && c)");
 			});
 
-			it("should drop empty conditions", async () => {
-				expect(and("a", nil(), "b")).toBe("a && b");
+			it("should return a single condition unchanged", async () => {
+				expect(and("a", nil())).toBe("a");
+			});
+
+			it("should yield the empty fragment for no surviving conditions", async () => {
+				expect(and(nil())).toBe("");
+			});
+
+			it("should bind a nested disjunction as a whole", async () => {
+				expect(and("a", or("b", "c"))).toBe("(a && (b || c))");
 			});
 
 		});
 
 		describe("or", () => {
 
-			it("should drop empty conditions", async () => {
-				expect(or("a", nil(), "b")).toBe("a || b");
+			it("should bracket several conditions", async () => {
+				expect(or("a", nil(), "b")).toBe("(a || b)");
+			});
+
+			it("should return a single condition unchanged", async () => {
+				expect(or("a", nil())).toBe("a");
+			});
+
+			it("should yield the empty fragment for no surviving conditions", async () => {
+				expect(or(nil())).toBe("");
 			});
 
 		});
@@ -553,6 +871,14 @@ describe("generators", () => {
 
 			it("should render a parenthesised quotient", async () => {
 				expect(div("?x", "?y")).toBe("(?x / ?y)");
+			});
+
+		});
+
+		describe("neg", () => {
+
+			it("should render a parenthesised negation", async () => {
+				expect(neg("?x")).toBe("(-?x)");
 			});
 
 		});
