@@ -61,7 +61,7 @@
 import { error, isNumber, isString } from "@metreeca/core";
 import { dedent } from "@metreeca/core/strings";
 import { immutable } from "@metreeca/core/values";
-import { type Blank, type Named, type Term, type Triple } from "@metreeca/trio";
+import { type Predicate, type Subject, type Term, type Triple } from "@metreeca/trio";
 import { update } from "./builder.js";
 
 
@@ -302,15 +302,15 @@ export type Tuple = {
  * A SPARQL triple pattern, as a subject/predicate/object statement with optional {@link Variable | variables}.
  *
  * Each position generalises the corresponding {@link Triple} position by also admitting a {@link Variable}: the subject
- * is a variable, a {@link Named | named resource}, or a {@link Blank | blank node}; the predicate is a variable or
- * a named resource; the object is a variable or any {@link Term}. Unlike a ground {@link Triple}, a pattern may leave
- * positions unbound for matching. Construct one with {@link pattern}.
+ * is a variable or a {@link Subject}, either a named resource or a blank node; the predicate is a variable or a
+ * {@link Predicate}, that is a named resource; the object is a variable or any {@link Term}. Unlike a ground
+ * {@link Triple}, a pattern may leave positions unbound for matching. Construct one with {@link pattern}.
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#QSynTriples SPARQL 1.1 Triple Patterns}
  */
 export type Pattern = readonly [
-		Variable | Blank | Named,
-		Variable | Named,
+		Variable | Subject,
+		Variable | Predicate,
 		Variable | Term
 ];
 
@@ -395,16 +395,15 @@ export function tuple(tuple: Tuple): Tuple {
  * Assembles a subject/predicate/object pattern from ready positions, each admitting a {@link Variable} in addition to
  * the corresponding {@link Triple} position.
  *
- * @param subject - The subject position: a {@link Variable}, a {@link Blank | blank node}, or a
- * 		{@link Named | named resource}
- * @param predicate - The predicate position: a {@link Variable} or a {@link Named | named resource}
+ * @param subject - The subject position: a {@link Variable} or a {@link Subject}
+ * @param predicate - The predicate position: a {@link Variable} or a {@link Predicate}
  * @param object - The object position: a {@link Variable} or any RDF {@link Term}
  *
  * @returns An immutable {@link Pattern} of the three positions
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#QSynTriples SPARQL 1.1 Triple Patterns}
  */
-export function pattern(subject: Variable | Blank | Named, predicate: Variable | Named, object: Variable | Term): Pattern {
+export function pattern(subject: Variable | Subject, predicate: Variable | Predicate, object: Variable | Term): Pattern {
 	return immutable([subject, predicate, object]);
 }
 

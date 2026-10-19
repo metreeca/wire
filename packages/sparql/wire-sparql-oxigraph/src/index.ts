@@ -36,8 +36,9 @@ import { createScope, type Scope } from "@metreeca/core/scope";
 import {
 	type Blank,
 	blank,
-	type Named,
 	named,
+	type Predicate,
+	type Subject,
 	tagged,
 	type Term,
 	typed
@@ -111,13 +112,13 @@ export function createOxiRepository(): Repository {
 	return repository;
 
 
-	function subject(value: OxyTerm, blanks: Scope<Blank>): Blank | Named {
+	function subject(value: OxyTerm, blanks: Scope<Blank>): Subject {
 		return value.termType === "BlankNode" ? blanks.resolve(value.value)
 			: value.termType === "NamedNode" ? named(value.value)
 				: error(new Error(`unsupported subject term type <${value.termType}>`));
 	}
 
-	function predicate(value: OxyTerm): Named {
+	function predicate(value: OxyTerm): Predicate {
 		return named(name(value));
 	}
 

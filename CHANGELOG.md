@@ -11,6 +11,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Upgrade `@metreeca/core` to `^0.13.0`
 - Upgrade `@metreeca/http` to `^0.5.0`
+- Upgrade `@metreeca/trio` to `^0.2.0`
 
 ## [0.11.2](https://github.com/metreeca/wire/compare/v0.11.1...v0.11.2) - 2026-10-14
 
