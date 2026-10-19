@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-import { blank, named, tagged, typed } from "@metreeca/trio";
+import { blank, named, tagged, triple, typed } from "@metreeca/trio";
 import { NTriples } from "@metreeca/trio/ntriples";
-import { SPARQLResults } from "@metreeca/wire-sparql";
+import { SPARQLResults, SPARQLUpdate } from "@metreeca/wire-sparql";
 import { describe, expect, test, vi } from "vitest";
 import { decodeTerm, decodeTuples } from "./index.core.js";
 import { createHTTPRepository } from "./index.js";
@@ -152,6 +152,226 @@ describe("createHTTPRepository", () => {
 
 });
 
+
+describe("graph store", () => {
+
+	const query = "http://example.org/sparql";
+	const graphs = "http://example.org/rdf-graphs/service";
+
+	const g = "http://example.org/g";
+
+	const statements = [triple(named("http://example.org/s"), named("http://example.org/p"), typed("o"))];
+	const encoded = "<http://example.org/s> <http://example.org/p> \"o\" .";
+
+
+	/**
+	 * Builds a stub endpoint answering every exchange with an empty successful response.
+	 */
+	function stub() {
+
+		return vi.fn<typeof globalThis.fetch>(async () => new Response(null, { status: 204 }));
+
+	}
+
+	/**
+	 * Lists the exchanges a stub received, as method, URL, content type and body in request order.
+	 */
+	async function exchanges(fetch: ReturnType<typeof stub>) {
+
+		return Promise.all(fetch.mock.calls.map(async ([input, init]) => {
+
+			const request = new Request(input, init);
+
+			return {
+				method: request.method,
+				url: request.url,
+				type: request.headers.get("Content-Type"),
+				body: await request.text()
+			};
+
+		}));
+
+	}
+
+
+	describe("with a graph store endpoint", () => {
+
+		test("merges triples into a named graph as an N-Triples POST", async () => {
+
+			const fetch = stub();
+
+			await createHTTPRepository({ query, graphs, fetch }).merge(statements, g);
+
+			expect(await exchanges(fetch)).toEqual([{
+				method: "POST",
+				url: `${graphs}?${new URLSearchParams([["graph", g]])}`,
+				type: NTriples,
+				body: expect.stringContaining(encoded)
+			}]);
+
+		});
+
+		test("stores triples into a named graph as an N-Triples PUT", async () => {
+
+			const fetch = stub();
+
+			await createHTTPRepository({ query, graphs, fetch }).store(statements, g);
+
+			expect(await exchanges(fetch)).toEqual([{
+				method: "PUT",
+				url: `${graphs}?${new URLSearchParams([["graph", g]])}`,
+				type: NTriples,
+				body: expect.stringContaining(encoded)
+			}]);
+
+		});
+
+		test("targets the default graph with the default parameter", async () => {
+
+			const fetch = stub();
+			const http = createHTTPRepository({ query, graphs, fetch });
+
+			await http.merge(statements);
+			await http.store(statements);
+
+			expect((await exchanges(fetch)).map(({ method, url }) => [method, url])).toEqual([
+				["POST", `${graphs}?default`],
+				["PUT", `${graphs}?default`]
+			]);
+
+		});
+
+		test("extends endpoint URLs already carrying parameters", async () => {
+
+			const fetch = stub();
+
+			await createHTTPRepository({ query, graphs: `${graphs}?key=value`, fetch }).merge(statements);
+
+			expect((await exchanges(fetch)).map(({ url }) => url)).toEqual([`${graphs}?key=value&default`]);
+
+		});
+
+		test("issues no request when merging no triples", async () => {
+
+			const fetch = stub();
+
+			await createHTTPRepository({ query, graphs, fetch }).merge([], g);
+
+			expect(fetch).not.toHaveBeenCalled();
+
+		});
+
+		test("empties the graph when storing no triples", async () => {
+
+			const fetch = stub();
+
+			await createHTTPRepository({ query, graphs, fetch }).store([], g);
+
+			expect(await exchanges(fetch)).toEqual([{
+				method: "PUT",
+				url: `${graphs}?${new URLSearchParams([["graph", g]])}`,
+				type: NTriples,
+				body: ""
+			}]);
+
+		});
+
+		test("propagates endpoint errors", async () => {
+
+			const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(null, { status: 415 }));
+
+			await expect(createHTTPRepository({ query, graphs, fetch }).merge(statements))
+				.rejects.toMatchObject({ status: 415 });
+
+		});
+
+	});
+
+	describe("without a graph store endpoint", () => {
+
+		test("merges triples into a named graph as an INSERT DATA update", async () => {
+
+			const fetch = stub();
+
+			await createHTTPRepository({ query, fetch }).merge(statements, g);
+
+			expect(await exchanges(fetch)).toEqual([{
+				method: "POST",
+				url: query,
+				type: SPARQLUpdate,
+				body: `insert data { graph <${g}> { ${encoded} } }`
+			}]);
+
+		});
+
+		test("merges triples into the default graph as an INSERT DATA update", async () => {
+
+			const fetch = stub();
+
+			await createHTTPRepository({ query, fetch }).merge(statements);
+
+			expect((await exchanges(fetch)).map(({ body }) => body)).toEqual([`insert data { ${encoded} }`]);
+
+		});
+
+		test("stores triples into a named graph as a DROP SILENT and INSERT DATA update", async () => {
+
+			const fetch = stub();
+
+			await createHTTPRepository({ query, fetch }).store(statements, g);
+
+			expect((await exchanges(fetch)).map(({ body }) => body)).toEqual([
+				`drop silent graph <${g}>; insert data { graph <${g}> { ${encoded} } }`
+			]);
+
+		});
+
+		test("stores triples into the default graph as a DROP SILENT and INSERT DATA update", async () => {
+
+			const fetch = stub();
+
+			await createHTTPRepository({ query, fetch }).store(statements);
+
+			expect((await exchanges(fetch)).map(({ body }) => body)).toEqual([
+				`drop silent default; insert data { ${encoded} }`
+			]);
+
+		});
+
+		test("targets the update endpoint", async () => {
+
+			const fetch = stub();
+			const update = "http://example.org/update";
+
+			await createHTTPRepository({ query, update, fetch }).merge(statements);
+
+			expect((await exchanges(fetch)).map(({ url }) => url)).toEqual([update]);
+
+		});
+
+		test("issues no request when merging no triples", async () => {
+
+			const fetch = stub();
+
+			await createHTTPRepository({ query, fetch }).merge([], g);
+
+			expect(fetch).not.toHaveBeenCalled();
+
+		});
+
+		test("empties the graph when storing no triples", async () => {
+
+			const fetch = stub();
+
+			await createHTTPRepository({ query, fetch }).store([], g);
+
+			expect((await exchanges(fetch)).map(({ body }) => body)).toEqual([`drop silent graph <${g}>`]);
+
+		});
+
+	});
+
+});
 
 describe("bindings", () => {
 

@@ -16,7 +16,7 @@
 
 import { named, rdf, type Triple, triple, typed } from "@metreeca/trio";
 import { describe, expect, test, vi } from "vitest";
-import type { Dataset, Repository, Tuple } from "./index.js";
+import type { Dataset, Repository, RepositoryClient, Tuple } from "./index.js";
 import {
 	createBufferingRepository,
 	createLoggingRepository,
@@ -153,7 +153,9 @@ describe("wrappers", () => {
 				ask: vi.fn(async (): Promise<boolean> => true),
 				select: vi.fn(async (): Promise<readonly Tuple[]> => []),
 				construct: vi.fn(async (): Promise<readonly Triple[]> => []),
-				update: vi.fn(async (): Promise<void> => {})
+				update: vi.fn<RepositoryClient["update"]>(async () => {}),
+				merge: vi.fn<RepositoryClient["merge"]>(async () => {}),
+				store: vi.fn<RepositoryClient["store"]>(async () => {})
 			};
 
 			const repository: Repository = {
@@ -161,6 +163,8 @@ describe("wrappers", () => {
 				select: vi.fn(async (): Promise<readonly Tuple[]> => rows),
 				construct: vi.fn(async (): Promise<readonly Triple[]> => statements),
 				update: vi.fn(async (): Promise<void> => {}),
+				merge: vi.fn(async (): Promise<void> => {}),
+				store: vi.fn(async (): Promise<void> => {}),
 				execute: task => Promise.resolve(task(scope)),
 				close: vi.fn(async (): Promise<void> => {})
 			};
@@ -214,6 +218,15 @@ describe("wrappers", () => {
 				expect(repository.update).toHaveBeenCalledWith("INSERT", dataset);
 			});
 
+			test("delegates graph store writes directly to the underlying repository", async () => {
+				const { repository } = fakeRepository();
+				const buffering = createBufferingRepository(repository);
+				await buffering.merge(statements, "http://example.com/g");
+				await buffering.store(statements);
+				expect(repository.merge).toHaveBeenCalledWith(statements, "http://example.com/g");
+				expect(repository.store).toHaveBeenCalledWith(statements, undefined);
+			});
+
 		});
 
 		describe("within a transaction", () => {
@@ -251,6 +264,46 @@ describe("wrappers", () => {
 					["U2; U3", dataset],
 					["U4", undefined]
 				]);
+			});
+
+			test("buffers graph store writes until commit", async () => {
+				const { repository, scope } = fakeRepository();
+				await createBufferingRepository(repository).execute(async client => {
+					await client.merge(statements, "http://example.com/g");
+					await client.store(statements);
+					expect(scope.merge).not.toHaveBeenCalled();
+					expect(scope.store).not.toHaveBeenCalled();
+				});
+				expect(scope.merge).toHaveBeenCalledWith(statements, "http://example.com/g");
+				expect(scope.store).toHaveBeenCalledWith(statements, undefined);
+			});
+
+			test("flushes graph store writes in issue order, splitting update runs", async () => {
+				const { repository, scope } = fakeRepository();
+				const flushed: string[] = [];
+				scope.update.mockImplementation(async update => void flushed.push(update));
+				scope.merge.mockImplementation(async () => void flushed.push("MERGE"));
+				scope.store.mockImplementation(async () => void flushed.push("STORE"));
+				await createBufferingRepository(repository).execute(async client => {
+					await client.update("U1");
+					await client.update("U2");
+					await client.merge(statements);
+					await client.update("U3");
+					await client.store(statements);
+					await client.update("U4");
+				});
+				expect(flushed).toEqual(["U1; U2", "MERGE", "U3", "STORE", "U4"]);
+			});
+
+			test("discards buffered graph store writes when the task rejects", async () => {
+				const { repository, scope } = fakeRepository();
+				await expect(createBufferingRepository(repository).execute(async client => {
+					await client.merge(statements);
+					await client.store(statements);
+					throw new Error("boom");
+				})).rejects.toThrow();
+				expect(scope.merge).not.toHaveBeenCalled();
+				expect(scope.store).not.toHaveBeenCalled();
 			});
 
 			test("issues no update when the task performs none", async () => {
@@ -314,7 +367,9 @@ describe("wrappers", () => {
 				ask: vi.fn(async (): Promise<boolean> => true),
 				select: vi.fn(async (): Promise<readonly Tuple[]> => rows),
 				construct: vi.fn(async (): Promise<readonly Triple[]> => statements),
-				update: vi.fn(async (): Promise<void> => {})
+				update: vi.fn(async (): Promise<void> => {}),
+				merge: vi.fn(async (): Promise<void> => {}),
+				store: vi.fn(async (): Promise<void> => {})
 			};
 
 			const repository: Repository = {
@@ -322,6 +377,8 @@ describe("wrappers", () => {
 				select: vi.fn(async (): Promise<readonly Tuple[]> => rows),
 				construct: vi.fn(async (): Promise<readonly Triple[]> => statements),
 				update: vi.fn(async (): Promise<void> => {}),
+				merge: vi.fn(async (): Promise<void> => {}),
+				store: vi.fn(async (): Promise<void> => {}),
 				execute: task => Promise.resolve(task(scope)),
 				close: vi.fn(async (): Promise<void> => {})
 			};
@@ -350,6 +407,29 @@ describe("wrappers", () => {
 				const logger = vi.fn<(message: string) => void>();
 				await createLoggingRepository(repository, logger).update("INSERT");
 				expect(logged(logger).some(message => message.includes("executed update in") && message.includes("INSERT"))).toBe(true);
+			});
+
+			test("logs each graph store write with its elapsed time, triple count and target graph", async () => {
+				const { repository } = fakeRepository();
+				const logger = vi.fn<(message: string) => void>();
+				const logging = createLoggingRepository(repository, logger);
+				await logging.merge(statements, "http://example.com/g");
+				await logging.store(statements);
+				expect(logged(logger)).toContainEqual(expect.stringMatching(
+					/^merged <1> triples into <http:\/\/example\.com\/g> in <\d+> ms$/
+				));
+				expect(logged(logger)).toContainEqual(expect.stringMatching(
+					/^stored <1> triples into default graph in <\d+> ms$/
+				));
+			});
+
+			test("delegates graph store writes to the underlying repository", async () => {
+				const { repository } = fakeRepository();
+				const logging = createLoggingRepository(repository, vi.fn());
+				await logging.merge(statements, "http://example.com/g");
+				await logging.store(statements);
+				expect(repository.merge).toHaveBeenCalledWith(statements, "http://example.com/g");
+				expect(repository.store).toHaveBeenCalledWith(statements, undefined);
 			});
 
 			test("delegates the query result unchanged", async () => {
@@ -409,6 +489,19 @@ describe("wrappers", () => {
 					await client.update("INSERT");
 				});
 				expect(logged(logger).some(message => message.includes("executed update in") && message.includes("INSERT"))).toBe(true);
+			});
+
+			test("logs graph store writes issued through the transaction client", async () => {
+				const { repository, scope } = fakeRepository();
+				const logger = vi.fn<(message: string) => void>();
+				await createLoggingRepository(repository, logger).execute(async client => {
+					await client.merge(statements, "http://example.com/g");
+					await client.store(statements, "http://example.com/g");
+				});
+				expect(logged(logger).some(message => message.startsWith("merged <1> triples into"))).toBe(true);
+				expect(logged(logger).some(message => message.startsWith("stored <1> triples into"))).toBe(true);
+				expect(scope.merge).toHaveBeenCalledWith(statements, "http://example.com/g");
+				expect(scope.store).toHaveBeenCalledWith(statements, "http://example.com/g");
 			});
 
 			test("forwards transaction operations to the underlying scope", async () => {

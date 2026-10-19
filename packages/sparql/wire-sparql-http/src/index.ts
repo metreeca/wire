@@ -29,11 +29,13 @@
  */
 
 import { isError } from "@metreeca/core";
+import { type IRI } from "@metreeca/core/resource";
 import { immutable } from "@metreeca/core/values";
 import { createFetch } from "@metreeca/http";
 import { type Problem, success } from "@metreeca/http/success";
 import { transport } from "@metreeca/http/transport";
-import { decodeNTriples, NTriples } from "@metreeca/trio/ntriples";
+import { type Triple } from "@metreeca/trio";
+import { decodeNTriples, encodeNTriples, NTriples } from "@metreeca/trio/ntriples";
 import {
 	type Dataset,
 	type Repository,
@@ -42,6 +44,7 @@ import {
 	SPARQLResults,
 	SPARQLUpdate
 } from "@metreeca/wire-sparql";
+import { data, drop, graph, insert, reference, silent, triples, update } from "@metreeca/wire-sparql/builder";
 import { decodeTuples, type SPARQLBindings, type SPARQLBoolean } from "./index.core.js";
 
 
@@ -53,6 +56,11 @@ import { decodeTuples, type SPARQLBindings, type SPARQLBoolean } from "./index.c
  * parameters added to any the endpoint URL already carries: `default-graph-uri` and `named-graph-uri` on queries,
  * `using-graph-uri` and `using-named-graph-uri` on updates. An endpoint rejecting an update that declares its own
  * dataset as well fails like any other non-2xx response, rejecting with a {@link Problem} carrying the wire status.
+ *
+ * {@link Repository.merge | merge} and {@link Repository.store | store} upload their triples as N-Triples to the
+ * Graph Store Protocol endpoint, when one is configured. Without one, they run as `INSERT DATA` updates on the update
+ * endpoint, preceded by `DROP SILENT` for `store`. Every SPARQL 1.1 Protocol endpoint supports this fallback, at the
+ * price of parsing the data as SPARQL text. A `merge` of no triples issues no request to either endpoint.
  *
  * > [!IMPORTANT]
  * > **Transaction Isolation** — None. The SPARQL 1.1 Protocol exposes no transaction primitives.
@@ -73,6 +81,9 @@ import { decodeTuples, type SPARQLBindings, type SPARQLBoolean } from "./index.c
  * @param options - Endpoint URLs and the optional `fetch` override
  * @param options.query - SPARQL query endpoint URL, for example `http://localhost:7200/repositories/my-repo`
  * @param options.update - SPARQL update endpoint URL; defaults to `query` when omitted
+ * @param options.graphs - Graph Store Protocol endpoint URL, for example
+ * `http://localhost:7200/repositories/my-repo/rdf-graphs/service`; when omitted, graph store writes run as SPARQL
+ * updates on the `update` endpoint, with the same effect on the store but no bulk upload of the data
  * @param options.fetch - Custom `fetch` implementation used for every HTTP exchange, enabling header, auth, and
  * exchange customisation; defaults to the global `fetch`
  *
@@ -81,14 +92,18 @@ import { decodeTuples, type SPARQLBindings, type SPARQLBoolean } from "./index.c
 export function createHTTPRepository({
 
 	query: queryURL,
+
 	update: updateURL = queryURL,
+	graphs: graphsURL,
 
 	fetch = globalThis.fetch
 
 }: {
 
 	readonly query: string;
+
 	readonly update?: string;
+	readonly graphs?: string;
 
 	readonly fetch?: typeof globalThis.fetch;
 
@@ -143,6 +158,21 @@ export function createHTTPRepository({
 
 		},
 
+		merge(triples, graph) {
+
+			return triples.length === 0 ? Promise.resolve()
+				: graphsURL === undefined ? post(updateURL, SPARQLUpdate, inserting(triples, graph))
+					: upload(graphsURL, "POST", triples, graph);
+
+		},
+
+		store(triples, graph) {
+
+			return graphsURL === undefined ? post(updateURL, SPARQLUpdate, storing(triples, graph))
+				: upload(graphsURL, "PUT", triples, graph);
+
+		},
+
 		execute<V>(task: (repository: Repository) => V | Promise<V>): Promise<V> {
 
 			return Promise.resolve(task(repository)); // no transaction support, run the task directly
@@ -186,6 +216,45 @@ export function createHTTPRepository({
 	function target(url: string, parameters: readonly string[][]): string {
 		return parameters.length === 0 ? url
 			: `${url}${url.includes("?") ? "&" : "?"}${new URLSearchParams([...parameters])}`;
+	}
+
+	/**
+	 * Renders a graph store merge as an `INSERT DATA` update.
+	 */
+	function inserting(statements: readonly Triple[], target?: IRI): SPARQL {
+		return update(insert(data(target === undefined
+			? triples(statements)
+			: graph(reference(target), triples(statements))
+		)));
+	}
+
+	/**
+	 * Renders a graph store replacement as a `DROP SILENT` update followed by an `INSERT DATA` one.
+	 */
+	function storing(statements: readonly Triple[], target?: IRI): SPARQL {
+		return update(silent(drop(target ?? "default")), inserting(statements, target));
+	}
+
+	/**
+	 * Uploads triples as N-Triples to a Graph Store Protocol endpoint, identifying the target graph indirectly.
+	 */
+	async function upload(
+		url: string, method: "POST" | "PUT", statements: readonly Triple[], target?: IRI
+	): Promise<void> {
+
+		await remote(`${url}${url.includes("?") ? "&" : "?"}${target === undefined
+			? "default"
+			: new URLSearchParams([["graph", target]])
+		}`, {
+
+			method,
+
+			headers: { "Content-Type": NTriples },
+
+			body: encodeNTriples(statements)
+
+		});
+
 	}
 
 	async function post(url: string, contentType: string, body: SPARQL): Promise<void>;

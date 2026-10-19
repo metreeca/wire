@@ -19,6 +19,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   declared by the request text; `createBufferingRepository` joins only consecutive updates targeting equal datasets
 - `@metreeca/wire-sparql-http` and `@metreeca/wire-sparql-rdf4j` — datasets sent as SPARQL 1.1 Protocol parameters,
   within RDF4J transactions too; `@metreeca/wire-sparql-oxigraph` applies them to queries and rejects update datasets
+- `@metreeca/wire-sparql` — `merge` and `store` operations adding triples to a graph or replacing its content without
+  going through SPARQL text; every connector implementing `Repository` must now provide them as well
+- `@metreeca/wire-sparql-http` — `graphs` setting naming a Graph Store Protocol endpoint for bulk `merge` and `store`
+  uploads; without it, the connector runs them as SPARQL updates on the `update` endpoint instead
+- `@metreeca/wire-sparql-rdf4j` — `merge` and `store` uploaded as N-Triples to the repository Graph Store Protocol
+  service, or as transaction `ADD` operations within an `execute` task, with no parsing of the data as SPARQL text
 
 ### Changed
 

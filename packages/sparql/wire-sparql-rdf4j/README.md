@@ -39,7 +39,8 @@ The optional `infer` and `timeout` settings apply to every operation: `infer: fa
 statements, and `timeout` bounds the execution time of each operation, in seconds. RDF4J Server ignores `timeout` on
 updates issued within an `execute` task, so an update that needs a time bound has to run outside a transaction.
 
-See [@metreeca/wire-sparql] for the `Repository` query API (`ask`, `select`, `construct`, `update`, `execute`, `close`).
+See [@metreeca/wire-sparql] for the `Repository` API: `ask`, `select` and `construct` query the store, `update`,
+`merge` and `store` write to it, and `execute` and `close` manage transactions and resources.
 
 > [!IMPORTANT]
 >

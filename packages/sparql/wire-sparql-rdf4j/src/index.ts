@@ -31,11 +31,20 @@
 
 import { assert } from "@metreeca/core";
 import { immutable } from "@metreeca/core/values";
-import { resolve } from "@metreeca/core/resource";
+import { type IRI, resolve } from "@metreeca/core/resource";
 import { createFetch } from "@metreeca/http";
 import { type Problem, success } from "@metreeca/http/success";
 import { transport } from "@metreeca/http/transport";
-import { type Dataset, type Repository, SPARQLQuery, SPARQLUpdate } from "@metreeca/wire-sparql";
+import { type Triple } from "@metreeca/trio";
+import { encodeNTriples, NTriples } from "@metreeca/trio/ntriples";
+import {
+	type Dataset,
+	type Repository,
+	type RepositoryClient,
+	SPARQLQuery,
+	SPARQLUpdate
+} from "@metreeca/wire-sparql";
+import { drop, silent } from "@metreeca/wire-sparql/builder";
 import { createHTTPRepository } from "@metreeca/wire-sparql-http";
 
 
@@ -63,6 +72,11 @@ const DatasetParameters: ReadonlySet<string> = new Set([
  * endpoints (`/repositories/{id}` for query, `/repositories/{id}/statements` for update) by delegating to a
  * {@link createHTTPRepository} instance, so a one-off `ask` / `update` does not pay the start-and-commit roundtrip
  * cost. A {@link Dataset} is honoured both inside and outside `execute` tasks, as the same protocol parameters.
+ *
+ * {@link Repository.merge | merge} and {@link Repository.store | store} upload their triples as N-Triples without
+ * parsing them as SPARQL text: outside `execute` tasks to the Graph Store Protocol service of the repository
+ * (`/repositories/{id}/rdf-graphs/service`), within them as transaction `ADD` operations, which a `store` precedes
+ * with a `DROP SILENT` update clearing the target graph. The default graph is the RDF4J null context.
  *
  * > [!IMPORTANT]
  * > **Transaction Isolation** — Determined by the target RDF4J repository.
@@ -140,11 +154,12 @@ export function createRDF4JRepository({
 
 	const query = `${server}/repositories/${repository}`;
 	const update = `${query}/statements`;
+	const graphs = `${query}/rdf-graphs/service`;
 	const txns = `${query}/transactions`;
 
 	return immutable({
 
-		...createHTTPRepository({ query: configure(query), update: configure(update), fetch }),
+		...createHTTPRepository({ query: configure(query), update: configure(update), graphs, fetch }),
 
 		async execute(task) {
 
@@ -160,10 +175,23 @@ export function createRDF4JRepository({
 
 			const txn = resolve(txns, location);
 
-			// transaction-scoped repository: an ordinary SPARQL-over-HTTP repository whose every exchange is
-			// retargeted onto the RDF4J transaction endpoint (`PUT <txn>?action=…`) by the transact() fetch wrapper
+			// transaction-scoped repository: an ordinary SPARQL-over-HTTP repository whose every exchange is retargeted
+			// onto the RDF4J transaction endpoint (`PUT <txn>?action=…`) by the transact() fetch wrapper, while graph
+			// store writes run as transaction `ADD` operations against that same endpoint
 
-			const scoped = createHTTPRepository({ query: txn, update: txn, fetch: transact(txn) });
+			const http = createHTTPRepository({ query: txn, update: txn, fetch: transact(txn) });
+
+			const scoped: RepositoryClient = immutable({
+
+				...http,
+
+				merge: (triples, graph) => add(txn, triples, graph),
+
+				store: (triples, graph) => http.update(silent(drop(graph ?? "default"))).then(() =>
+					add(txn, triples, graph)
+				)
+
+			});
 
 			try {
 
@@ -196,6 +224,26 @@ export function createRDF4JRepository({
 	function configure(url: string): string {
 
 		return settings === "" ? url : `${url}${url.includes("?") ? "&" : "?"}${settings}`;
+
+	}
+
+	/**
+	 * Adds triples to a graph within an open RDF4J transaction.
+	 *
+	 * @param txn - Transaction endpoint URL from the start-transaction `Location` header
+	 * @param triples - The triples to add; when empty, no exchange is issued
+	 * @param graph - The IRI of the target graph; when omitted, the null context
+	 */
+	function add(txn: string, triples: readonly Triple[], graph?: IRI): Promise<void> {
+
+		return triples.length === 0 ? Promise.resolve() : remote(configure(`${txn}?${new URLSearchParams([
+			["action", "ADD"],
+			["context", graph === undefined ? "null" : `<${graph}>`]
+		])}`), {
+			method: "PUT",
+			headers: { "Content-Type": NTriples },
+			body: encodeNTriples(triples)
+		}).then(() => {});
 
 	}
 

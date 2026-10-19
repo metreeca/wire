@@ -10,4 +10,5 @@
 > (`createHTTPRepository`) and layers RDF4J server-managed transactions and operation settings on top. Its tests
 > (`src/index.test.ts`) run against a stub `fetch` and cover only what the connector adds to the HTTP connector: the
 > forwarding of the `infer` and `timeout` settings and of dataset parameters to every endpoint, transactional ones
-> included, and the rejection of `timeout` values that are not positive integers.
+> included, the routing of graph store writes to the Graph Store Protocol service and to transaction `ADD` operations,
+> and the rejection of `timeout` values that are not positive integers, raised as a `TypeError` at construction.

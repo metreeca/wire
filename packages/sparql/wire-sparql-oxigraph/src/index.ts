@@ -41,11 +41,15 @@ import {
 	type Subject,
 	tagged,
 	type Term,
+	type Triple,
 	typed
 } from "@metreeca/trio";
+import { encodeNTriples, NTriples } from "@metreeca/trio/ntriples";
 import type { Dataset, Repository } from "@metreeca/wire-sparql";
 import { variable } from "@metreeca/wire-sparql";
+import { drop, silent } from "@metreeca/wire-sparql/builder";
 import {
+	defaultGraph,
 	type NamedNode as OxyNamedNode,
 	namedNode,
 	type Quad as OxyQuad,
@@ -63,6 +67,9 @@ import {
  * > [!WARNING]
  * > The store applies a {@link Dataset} to queries only: an update given a dataset listing any graphs is rejected with
  * > an `Error` and leaves the store unchanged, as Oxigraph offers no way to run an update against a dataset.
+ *
+ * {@link Repository.merge | merge} and {@link Repository.store | store} load their triples straight into the store,
+ * without parsing them as SPARQL text, and keep merged blank nodes apart from those already stored.
  *
  * @returns A {@link Repository} instance
  */
@@ -107,6 +114,20 @@ export function createOxiRepository(): Repository {
 
 		},
 
+		merge(triples, graph) {
+
+			return Promise.resolve(load(triples, graph));
+
+		},
+
+		store(triples, graph) {
+
+			store.update(silent(drop(graph ?? "default")));
+
+			return Promise.resolve(load(triples, graph));
+
+		},
+
 		execute<V>(task: (repository: Repository) => V | Promise<V>): Promise<V> {
 
 			return Promise.resolve(task(repository)); // no transaction support, run the task directly
@@ -123,6 +144,16 @@ export function createOxiRepository(): Repository {
 
 	return repository;
 
+
+	/**
+	 * Loads triples into a graph of the store, the default one when `graph` is omitted.
+	 */
+	function load(triples: readonly Triple[], graph?: IRI): void {
+		store.load(encodeNTriples(triples), {
+			format: NTriples,
+			to_graph_name: graph === undefined ? defaultGraph() : namedNode(graph)
+		});
+	}
 
 	/**
 	 * Checks whether a dataset lists no graphs, leaving the dataset declared by the request text in effect.

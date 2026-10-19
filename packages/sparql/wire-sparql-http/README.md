@@ -35,7 +35,12 @@ const repository = createHTTPRepository({
 });
 ```
 
-See [@metreeca/wire-sparql] for the `Repository` query API (`ask`, `select`, `construct`, `update`, `execute`, `close`).
+The optional `graphs` setting names a [Graph Store Protocol](https://www.w3.org/TR/sparql11-http-rdf-update/) endpoint,
+where `merge` and `store` upload their triples in bulk. Without it, they run as SPARQL updates on the `update` endpoint,
+with the same effect on the store, but with the data parsed as SPARQL text and sent as a single update request.
+
+See [@metreeca/wire-sparql] for the `Repository` API: `ask`, `select` and `construct` query the store, `update`,
+`merge` and `store` write to it, and `execute` and `close` manage transactions and resources.
 
 > [!IMPORTANT]
 >

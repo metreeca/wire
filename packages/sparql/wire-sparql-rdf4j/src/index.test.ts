@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
-import { SPARQLResults } from "@metreeca/wire-sparql";
+import { named, triple, typed } from "@metreeca/trio";
+import { NTriples } from "@metreeca/trio/ntriples";
+import { SPARQLResults, SPARQLUpdate } from "@metreeca/wire-sparql";
 import { describe, expect, it, vi } from "vitest";
 import { createRDF4JRepository } from "./index.js";
 
@@ -146,6 +148,197 @@ describe("createRDF4JRepository", () => {
 		it.each([0, -1, 1.5, Number.NaN])("rejects timeout <%s>", async timeout => {
 
 			expect(() => createRDF4JRepository({ server, repository, timeout, fetch: stub() })).toThrow(TypeError);
+
+		});
+
+	});
+
+	describe("graph store", () => {
+
+		const server = "http://example.org/rdf4j-server";
+		const repository = "test";
+
+		const graphs = `${server}/repositories/${repository}/rdf-graphs/service`;
+		const txns = `${server}/repositories/${repository}/transactions`;
+		const txn = `${txns}/txn`;
+
+		const g = "http://example.org/g";
+
+		const statements = [triple(named("http://example.org/s"), named("http://example.org/p"), typed("o"))];
+		const encoded = "<http://example.org/s> <http://example.org/p> \"o\" .";
+
+
+		/**
+		 * Builds a stub RDF4J Server answering every exchange with a minimal successful response.
+		 */
+		function stub() {
+
+			return vi.fn<typeof globalThis.fetch>(async (input, init) => {
+
+				const request = new Request(input, init);
+
+				return request.method === "POST" && request.url === txns
+					? new Response(null, { status: 201, headers: { "Location": txn } })
+					: new Response(null, { status: 204 });
+
+			});
+
+		}
+
+		/**
+		 * Lists the exchanges a stub received, excluding transaction bracketing, as method, URL parameters, content
+		 * type and body in request order.
+		 */
+		async function exchanges(fetch: ReturnType<typeof stub>) {
+
+			const requests = fetch.mock.calls
+				.map(([input, init]) => new Request(input, init))
+				.filter(request => request.url !== txns && !request.url.includes("action=COMMIT"));
+
+			return Promise.all(requests.map(async request => ({
+				method: request.method,
+				url: request.url.split("?")[0],
+				parameters: Object.fromEntries(new URL(request.url).searchParams),
+				type: request.headers.get("Content-Type"),
+				body: await request.text()
+			})));
+
+		}
+
+
+		describe("outside a transaction", () => {
+
+			it("merges triples into the graph store service", async () => {
+
+				const fetch = stub();
+
+				await createRDF4JRepository({ server, repository, fetch }).merge(statements, g);
+
+				expect(await exchanges(fetch)).toEqual([{
+					method: "POST",
+					url: graphs,
+					parameters: { graph: g },
+					type: NTriples,
+					body: expect.stringContaining(encoded)
+				}]);
+
+			});
+
+			it("stores triples into the default graph of the graph store service", async () => {
+
+				const fetch = stub();
+
+				await createRDF4JRepository({ server, repository, fetch }).store(statements);
+
+				expect(await exchanges(fetch)).toEqual([{
+					method: "PUT",
+					url: graphs,
+					parameters: { default: "" },
+					type: NTriples,
+					body: expect.stringContaining(encoded)
+				}]);
+
+			});
+
+		});
+
+		describe("within a transaction", () => {
+
+			it("merges triples as a transaction ADD into the graph context", async () => {
+
+				const fetch = stub();
+
+				await createRDF4JRepository({ server, repository, fetch }).execute(async client => {
+					await client.merge(statements, g);
+				});
+
+				expect(await exchanges(fetch)).toEqual([{
+					method: "PUT",
+					url: txn,
+					parameters: { action: "ADD", context: `<${g}>` },
+					type: NTriples,
+					body: expect.stringContaining(encoded)
+				}]);
+
+			});
+
+			it("merges triples into the null context for the default graph", async () => {
+
+				const fetch = stub();
+
+				await createRDF4JRepository({ server, repository, fetch }).execute(async client => {
+					await client.merge(statements);
+				});
+
+				expect((await exchanges(fetch)).map(({ parameters }) => parameters)).toEqual([
+					{ action: "ADD", context: "null" }
+				]);
+
+			});
+
+			it("stores triples as a DROP SILENT update followed by a transaction ADD", async () => {
+
+				const fetch = stub();
+
+				await createRDF4JRepository({ server, repository, fetch }).execute(async client => {
+					await client.store(statements, g);
+				});
+
+				expect(await exchanges(fetch)).toEqual([{
+					method: "PUT",
+					url: txn,
+					parameters: { action: "UPDATE" },
+					type: SPARQLUpdate,
+					body: `drop silent graph <${g}>`
+				}, {
+					method: "PUT",
+					url: txn,
+					parameters: { action: "ADD", context: `<${g}>` },
+					type: NTriples,
+					body: expect.stringContaining(encoded)
+				}]);
+
+			});
+
+			it("clears the default graph when storing no triples", async () => {
+
+				const fetch = stub();
+
+				await createRDF4JRepository({ server, repository, fetch }).execute(async client => {
+					await client.store([]);
+				});
+
+				expect((await exchanges(fetch)).map(({ parameters, body }) => [parameters, body])).toEqual([
+					[{ action: "UPDATE" }, "drop silent default"]
+				]);
+
+			});
+
+			it("issues no exchange when merging no triples", async () => {
+
+				const fetch = stub();
+
+				await createRDF4JRepository({ server, repository, fetch }).execute(async client => {
+					await client.merge([], g);
+				});
+
+				expect(await exchanges(fetch)).toEqual([]);
+
+			});
+
+			it("forwards settings to transaction writes", async () => {
+
+				const fetch = stub();
+
+				await createRDF4JRepository({ server, repository, infer: false, fetch }).execute(async client => {
+					await client.merge(statements, g);
+				});
+
+				expect((await exchanges(fetch)).map(({ parameters }) => parameters)).toEqual([
+					{ action: "ADD", context: `<${g}>`, infer: "false" }
+				]);
+
+			});
 
 		});
 

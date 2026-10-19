@@ -31,7 +31,8 @@ import { createOxiRepository } from "@metreeca/wire-sparql-oxigraph";
 const repository = createOxiRepository();
 ```
 
-See [@metreeca/wire-sparql] for the `Repository` query API (`ask`, `select`, `construct`, `update`, `execute`, `close`).
+See [@metreeca/wire-sparql] for the `Repository` API: `ask`, `select` and `construct` query the store, `update`,
+`merge` and `store` write to it, and `execute` and `close` manage transactions and resources.
 
 > [!IMPORTANT]
 >

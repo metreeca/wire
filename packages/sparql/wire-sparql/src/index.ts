@@ -17,8 +17,8 @@
 /**
  * SPARQL repository API and data model.
  *
- * Provides a single, backend-independent API for working with SPARQL stores. Consumers query and update through the
- * {@link Repository} interface and exchange data as the SPARQL types defined here, layered on the RDF terms and
+ * Provides a single, backend-independent API for working with SPARQL stores. Consumers query and write them through
+ * the {@link Repository} interface and exchange data as the SPARQL types defined here, layered on the RDF terms and
  * statements of {@link https://metreeca.github.io/trio/ @metreeca/trio}, regardless of which connector backs the store.
  *
  * **Media types**
@@ -30,7 +30,7 @@
  * **Repository**
  *
  * - {@link Repository} — a {@link RepositoryClient} with transactional `execute` and lifecycle `close`
- * - {@link RepositoryClient} — query and update surface of an RDF store: `ask`/`select`/`construct` and `update`
+ * - {@link RepositoryClient} — operations on an RDF store: `ask`/`select`/`construct`, `update` and `merge`/`store`
  *
  * **Data model**
  *
@@ -49,7 +49,7 @@
  *
  * **Wrappers**
  *
- * - {@link createBufferingRepository} — wrap a {@link Repository} to coalesce a transaction's updates into one request
+ * - {@link createBufferingRepository} — wrap a {@link Repository} to batch a transaction's writes into few requests
  * - {@link createLoggingRepository} — wrap a {@link Repository} to log each operation and its elapsed time
  *
  * @module index
@@ -169,10 +169,10 @@ export interface Repository extends RepositoryClient {
 	/**
 	 * Execute a task within a repository transaction.
 	 *
-	 * The task receives a per-call {@link RepositoryClient} bound to a transaction; updates issued through it are
-	 * applied within the transaction in order. If the task completes successfully, the transaction commits. If the task
-	 * throws or rejects, the transaction rolls back and the error is propagated to the caller as a promise
-	 * rejection. Concurrent top-level `execute` calls run in independent transactions and never share state.
+	 * The task receives a per-call {@link RepositoryClient} bound to a transaction; updates and graph store writes
+	 * issued through it are applied within the transaction in order. If the task completes, the transaction commits; if
+	 * it throws or rejects, the transaction rolls back and the error propagates to the caller as a promise rejection.
+	 * Concurrent top-level `execute` calls run in independent transactions and never share state.
 	 *
 	 * > [!IMPORTANT]
 	 * > Every implementation must provide `execute`, but its guarantees are backend-dependent. A backend with native
@@ -211,8 +211,8 @@ export interface Repository extends RepositoryClient {
 	 * > that holds no resources implements it as a resolved no-op.
 	 *
 	 * > [!WARNING]
-	 * > Callers MUST NOT use the repository after `close` settles: `ask`, `select`, `construct`, `update`, and
-	 * > `execute` all have undefined behaviour once the underlying resources are released.
+	 * > Callers MUST NOT use the repository after `close` settles: `ask`, `select`, `construct`, `update`, `merge`,
+	 * > `store` and `execute` all have undefined behaviour once the underlying resources are released.
 	 *
 	 * @returns A promise resolving when all resources have been released; rejects with a
 	 * {@link @metreeca/core!Problem | Problem} if a clean-up error occurs
@@ -222,15 +222,16 @@ export interface Repository extends RepositoryClient {
 }
 
 /**
- * SPARQL repository query and update operations.
+ * SPARQL repository query, update and graph store operations.
  *
- * Groups the four core operations: `ask`, `select`, and `construct` read from the backing RDF store, and `update`
- * writes to it. {@link Repository} extends this surface for standalone use; the same operations are also handed to a
- * task as the per-call client inside {@link Repository.execute | execute}, where they run within the enclosing
- * transaction.
+ * Groups the core operations: `ask`, `select`, and `construct` read from the backing RDF store, `update` writes to it
+ * through SPARQL Update requests, and `merge` and `store` write RDF data into a graph without going through SPARQL
+ * text. {@link Repository} extends this surface for standalone use; the same operations are also handed to a task as
+ * the per-call client inside {@link Repository.execute | execute}, where they run within the enclosing transaction.
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/ SPARQL 1.1 Query Language}
  * @see {@link https://www.w3.org/TR/sparql11-update/ SPARQL 1.1 Update}
+ * @see {@link https://www.w3.org/TR/sparql11-http-rdf-update/ SPARQL 1.1 Graph Store HTTP Protocol}
  */
 export interface RepositoryClient {
 
@@ -267,6 +268,7 @@ export interface RepositoryClient {
 	 */
 	construct(query: SPARQL, dataset?: Dataset): Promise<readonly Triple[]>;
 
+
 	/**
 	 * Execute a SPARQL UPDATE operation.
 	 *
@@ -282,6 +284,37 @@ export interface RepositoryClient {
 	 * 		an RDF Dataset}
 	 */
 	update(update: SPARQL, dataset?: Dataset): Promise<void>;
+
+
+	/**
+	 * Merge triples into a graph.
+	 *
+	 * Adds `triples` to the graph content, keeping the statements already there. Blank nodes in `triples` are kept
+	 * apart from those already in the store, as in an `INSERT DATA` update, so they never correlate with existing
+	 * nodes. Merging an empty array leaves the store unchanged, creating no named graph either.
+	 *
+	 * @param triples - The RDF {@link Triple | triples} to add
+	 * @param graph - The IRI of the target named graph, created if missing; when omitted, the default graph
+	 *
+	 * @see {@link https://www.w3.org/TR/sparql11-http-rdf-update/#http-post SPARQL 1.1 Graph Store Protocol §5.5 —
+	 * 		HTTP POST}
+	 */
+	merge(triples: readonly Triple[], graph?: IRI): Promise<void>;
+
+	/**
+	 * Store triples as the content of a graph.
+	 *
+	 * Replaces the graph content with `triples`, discarding the statements already there. Blank nodes in `triples` are
+	 * kept apart from those already in the store, as in {@link RepositoryClient.merge | merge}. Storing an empty array
+	 * leaves the graph empty, while the other graphs of the store are never affected.
+	 *
+	 * @param triples - The RDF {@link Triple | triples} making up the new graph content
+	 * @param graph - The IRI of the target named graph, created if missing; when omitted, the default graph
+	 *
+	 * @see {@link https://www.w3.org/TR/sparql11-http-rdf-update/#http-put SPARQL 1.1 Graph Store Protocol §5.3 —
+	 * 		HTTP PUT}
+	 */
+	store(triples: readonly Triple[], graph?: IRI): Promise<void>;
 
 }
 
@@ -307,8 +340,7 @@ export type SPARQL = string
  * lists no graphs in either property leaves the request's own dataset in effect.
  *
  * @see {@link https://www.w3.org/TR/sparql11-query/#rdfDataset SPARQL 1.1 Query §13 — RDF Dataset}
- * @see {@link https://www.w3.org/TR/sparql11-protocol/#dataset SPARQL 1.1 Protocol §2.1.4 — Specifying an RDF
- * 		Dataset}
+ * @see {@link https://www.w3.org/TR/sparql11-protocol/#dataset SPARQL 1.1 Protocol §2.1.4 — Specifying an RDF Dataset}
  */
 export type Dataset = {
 
@@ -473,13 +505,15 @@ export function variable(name?: number | string): Variable {
  * Wraps a {@link Repository} to coalesce a transaction's updates into as few requests as possible.
  *
  * Returns a repository that delegates every operation to `repository` unchanged outside a transaction. Within
- * {@link Repository.execute | execute}, queries still run directly against the transaction scope, but updates are
- * buffered rather than issued. On successful completion, the buffered updates are flushed in issue order. Consecutive
- * updates targeting equal {@link Dataset | datasets} are joined with `;` into a single update.
+ * {@link Repository.execute | execute}, queries still run directly against the transaction scope, but updates and
+ * graph store writes are buffered rather than issued. On successful completion, the buffered writes are flushed in
+ * issue order: consecutive updates targeting equal {@link Dataset | datasets} are joined with `;` into a single
+ * update, while each {@link RepositoryClient.merge | merge} and {@link RepositoryClient.store | store} is flushed as
+ * a separate request, so graph store writes are never folded into a SPARQL update.
  *
- * A task that issues no updates runs none, and a task that throws or rejects discards the buffer, so no partial
- * update reaches the backend. A flush failing part-way leaves the earlier updates applied, unless the wrapped
- * repository rolls back the enclosing transaction, as a repository with native transactions does.
+ * A task that issues no writes runs none, and a task that throws or rejects discards the buffer, so no partial write
+ * reaches the backend. A flush failing part-way leaves the earlier writes applied, unless the wrapped repository rolls
+ * back the enclosing transaction, as a repository with native transactions does.
  *
  * @param repository - The repository to wrap
  *
@@ -492,6 +526,10 @@ export function createBufferingRepository(repository: Repository): Repository {
 		readonly updates: readonly SPARQL[]
 		readonly dataset?: Dataset
 
+	} | {
+
+		readonly write: (client: RepositoryClient) => Promise<void>
+
 	}
 
 	return immutable({
@@ -499,25 +537,39 @@ export function createBufferingRepository(repository: Repository): Repository {
 		ask: (query, dataset) => repository.ask(query, dataset),
 		select: (query, dataset) => repository.select(query, dataset),
 		construct: (query, dataset) => repository.construct(query, dataset),
+
 		update: (update, dataset) => repository.update(update, dataset),
 
-		// within a transaction, accumulate the updates and flush them on commit, one update per run sharing a dataset
+		merge: (triples, graph) => repository.merge(triples, graph),
+		store: (triples, graph) => repository.store(triples, graph),
+
+		// within a transaction, accumulate the writes and flush them on commit, one update per run sharing a dataset
 
 		execute: task => repository.execute(async scope => {
 
-			const buffer: Buffered[] = []; // sink for the updates issued by the task through its client
+			const buffer: Buffered[] = []; // sink for the writes issued by the task through its client
 
 			const value = await task(immutable({
 
 				ask: (query, dataset) => scope.ask(query, dataset),
 				select: (query, dataset) => scope.select(query, dataset),
 				construct: (query, dataset) => scope.construct(query, dataset),
-				update: (update, dataset) => Promise.resolve(void buffer.push({ updates: [update], dataset }))
+
+				update: (update, dataset) => Promise.resolve(void buffer.push({ updates: [update], dataset })),
+
+				merge: (triples, graph) => Promise.resolve(void buffer.push({
+					write: client => client.merge(triples, graph)
+				})),
+
+				store: (triples, graph) => Promise.resolve(void buffer.push({
+					write: client => client.store(triples, graph)
+				}))
 
 			}));
 
-			await coalesce(buffer).reduce((flushed, run) => flushed.then(() =>
-				scope.update(update(...run.updates), run.dataset)
+			await coalesce(buffer).reduce((flushed, run) => flushed.then(() => "write" in run
+				? run.write(scope)
+				: scope.update(update(...run.updates), run.dataset)
 			), Promise.resolve());
 
 			return value;
@@ -534,7 +586,7 @@ export function createBufferingRepository(repository: Repository): Repository {
 
 			const last = runs.at(-1);
 
-			return last !== undefined && equals(last.dataset, next.dataset)
+			return last !== undefined && "updates" in last && "updates" in next && equals(last.dataset, next.dataset)
 				? [...runs.slice(0, -1), { ...last, updates: [...last.updates, ...next.updates] }]
 				: [...runs, next];
 
@@ -547,10 +599,11 @@ export function createBufferingRepository(repository: Repository): Repository {
  * Wraps a {@link Repository} to log each operation and its elapsed time.
  *
  * Returns a repository that delegates every operation to `repository`, timing each one and reporting it through
- * `logger`: queries and updates log the elapsed milliseconds alongside the request text, whether issued directly or
- * through the transaction scope handed to an {@link Repository.execute | execute} task, while `execute` additionally
- * logs the transaction opening, its committed duration, or its abort with the propagated error. The wrapper is
- * otherwise transparent: results, errors, and isolation guarantees are those of the wrapped repository.
+ * `logger`: queries and updates log the elapsed milliseconds alongside the request text, and graph store writes
+ * alongside the triple count and the target graph, whether issued directly or through the transaction scope handed to
+ * an {@link Repository.execute | execute} task, while `execute` also logs the transaction opening, its committed
+ * duration, or its abort with the propagated error. The wrapper is otherwise transparent: results, errors, and
+ * isolation guarantees are those of the wrapped repository, and so are the requests it sends to the backend.
  *
  * @param repository - The repository to wrap
  * @param logger - The callback invoked with each log message
@@ -629,16 +682,41 @@ export function createLoggingRepository(repository: Repository, logger: (message
 
 			},
 
+
 			update(update, dataset) {
 
 				return time(() => client.update(update, dataset), (_, elapsed) =>
 					logger(`executed update in <${millis(elapsed)}> ms / ${update}`)
 				);
 
+			},
+
+
+			merge(triples, graph) {
+
+				return time(() => client.merge(triples, graph), (_, elapsed) =>
+					logger(`merged ${target(triples, graph)} in <${millis(elapsed)}> ms`)
+				);
+
+			},
+
+			store(triples, graph) {
+
+				return time(() => client.store(triples, graph), (_, elapsed) =>
+					logger(`stored ${target(triples, graph)} in <${millis(elapsed)}> ms`)
+				);
+
 			}
 
 		});
 
+	}
+
+	/**
+	 * Describes the payload of a graph store write for inclusion in a log message.
+	 */
+	function target(triples: readonly Triple[], graph?: IRI): string {
+		return `<${triples.length}> triples into ${graph === undefined ? "default graph" : `<${graph}>`}`;
 	}
 
 	/**

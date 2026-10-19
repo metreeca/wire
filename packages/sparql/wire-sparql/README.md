@@ -4,8 +4,9 @@
 
 SPARQL 1.1 query language framework for [@metreeca/wire](https://github.com/metreeca/wire) storage connectors.
 
-Provides a uniform `Repository` interface for issuing SPARQL queries and updates against any backend (an embedded store,
-a remote endpoint, or a managed server), without binding application code to a specific store or client. It also bundles
+Provides a uniform `Repository` interface for issuing SPARQL queries and updates and for writing RDF data into graphs
+against any backend (an embedded store, a remote endpoint, or a managed server), without binding application code to a
+specific store or client. It also bundles
 combinators for composing SPARQL queries and updates from typed fragments, and exchanges data as the RDF terms and
 statements of [@metreeca/trio](https://github.com/metreeca/trio), which it pulls in as a direct dependency.
 
@@ -94,6 +95,24 @@ const tuples = await repository.select(`SELECT ?name { ?product <https://schema.
 > An update given a dataset must declare none of its own through `USING`, `USING NAMED` or `WITH` clauses. Backends
 > reject the combination, and some connectors do not support update datasets at all.
 
+## Writing RDF Data
+
+Write RDF triples into a graph with `merge`, which adds them to the graph content, or with `store`, which replaces it.
+Both take the triples as terms rather than as SPARQL text, so connectors can upload large data sets in bulk:
+
+```typescript
+import { named, triple, typed } from "@metreeca/trio";
+
+const widget = triple(
+	named("https://example.org/widget"),
+	named("https://schema.org/name"),
+	typed("Widget")
+);
+
+await repository.merge([widget], "https://example.org/catalog"); // adds to the named graph
+await repository.store([widget]); // replaces the default graph content
+```
+
 ## Transactions
 
 Bracket related operations with `execute`: the task runs on a per-call `RepositoryClient` and commits together, or rolls
@@ -114,14 +133,16 @@ await repository.execute(async tx => {
 
 ## Implementing a Connector
 
-A backend connector implements the `Repository` interface (`ask`, `select`, `construct`, `update`, `execute`, and
-`close`), lifting native backend nodes into the shared term model with the `named`, `tagged`, and `typed` constructors
-of [@metreeca/trio](https://github.com/metreeca/trio), and parsing or serialising RDF payloads with its
-`@metreeca/trio/ntriples` codec.
+A backend connector implements the `Repository` interface (`ask`, `select`, `construct`, `update`, `merge`, `store`,
+`execute`, and `close`), lifting native backend nodes into the shared term model with the `named`, `tagged`, and
+`typed` constructors of [@metreeca/trio](https://github.com/metreeca/trio), and parsing or serialising RDF payloads
+with its `@metreeca/trio/ntriples` codec, as the bundled HTTP connectors do for query results and graph uploads.
 
 A minimal connector has the shape:
 
 ```typescript
+import type { IRI } from "@metreeca/core/resource";
+import type { Triple } from "@metreeca/trio";
 import type { Dataset, Repository, SPARQL } from "@metreeca/wire-sparql";
 
 function createMyRepository(/* endpoint, client, … */): Repository {
@@ -135,6 +156,10 @@ function createMyRepository(/* endpoint, client, … */): Repository {
 		construct: async (query: SPARQL, dataset?: Dataset) => { /* run CONSTRUCT; map statements to Triples */ },
 
 		update: async (update: SPARQL, dataset?: Dataset) => { /* apply the UPDATE */ },
+
+		merge: async (triples: readonly Triple[], graph?: IRI) => { /* add the triples to the graph */ },
+
+		store: async (triples: readonly Triple[], graph?: IRI) => { /* replace the graph content */ },
 
 		execute: async task => task(repository),  // or bracket the task in a backend transaction
 
